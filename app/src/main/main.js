@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, clipboard, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, clipboard, screen, Tray, Notification } = require("electron");
 const { Store } = require("./store/store");
 const { ModelClient } = require("./agent/model-client");
 const { runAgent } = require("./agent/loop");
@@ -31,6 +31,9 @@ let routineStore = null;
 let scheduler = null;
 let approvals = null;
 let audit = null;
+let tray = null;
+// 关窗口 = 收进托盘（后台继续跑例程），只有显式「退出」才真正结束进程
+let isQuitting = false;
 const running = new Map(); // runId -> AbortController
 
 const MIN_WIDTH = 900;
@@ -129,12 +132,20 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
-  mainWindow.on("close", () => {
+  mainWindow.on("close", (e) => {
     if (!mainWindow) return;
     const maximized = mainWindow.isMaximized();
     // 最大化时 getSize() 返回的是屏幕尺寸；必须用 getNormalBounds() 才能拿到「还原后」的尺寸
     const b = mainWindow.getNormalBounds();
     store.updateApp({ window: { width: b.width, height: b.height, x: b.x, y: b.y, maximized } });
+    // 点窗口右上角 X 不退出：收进托盘，让定时例程继续在后台跑。
+    // 真正退出走托盘菜单「退出」或菜单栏，那里会置 isQuitting=true。
+    // 没有托盘图标时不能拦——否则窗口藏了却再也叫不出来，只能杀进程。
+    if (!isQuitting && tray) {
+      e.preventDefault();
+      mainWindow.hide();
+      notifyHiddenToTray();
+    }
   });
   mainWindow.on("closed", () => { mainWindow = null; });
 
@@ -142,6 +153,57 @@ function createWindow() {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
+}
+
+/** 从托盘 / 二次启动把窗口调出来 */
+function showMainWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/** 第一次收进托盘时提示一次，避免用户以为「应用没了」 */
+let trayHintShown = false;
+function notifyHiddenToTray() {
+  if (trayHintShown) return;
+  trayHintShown = true;
+  try {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Grok Bot 仍在后台运行",
+        body: "窗口已收进系统托盘，定时例程会继续执行。右键托盘图标可退出。",
+        silent: true,
+      }).show();
+    }
+  } catch { /* 通知失败不影响主流程 */ }
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, "..", "..", "assets", "tray.png"));
+  } catch {
+    return; // 没有图标就不做托盘，退出逻辑回落到正常关闭
+  }
+  const menu = Menu.buildFromTemplate([
+    { label: "显示主窗口", click: () => showMainWindow() },
+    { type: "separator" },
+    {
+      label: "退出 Grok Bot",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setToolTip("Grok Bot");
+  tray.setContextMenu(menu);
+  tray.on("click", () => showMainWindow());
+  tray.on("double-click", () => showMainWindow());
 }
 
 /* ---------------- 协作（供交互 / 例程共用） ---------------- */
@@ -277,11 +339,14 @@ async function runGroupChat(fromBot, topic, members, signal, runId, sender, opts
   return `群聊记录（房间 ${roomId}）：\n\n${lines.join("\n\n")}`;
 }
 
-/** 跑一条例程（定时任务用，无界面事件） */
-async function executeRoutine(routine) {
+/**
+ * 跑一条例程（定时任务用，无界面事件）。
+ * @param {object} routine
+ * @param {AbortSignal} [signal] 由调度器传入，手动停止时中止整轮
+ */
+async function executeRoutine(routine, signal) {
   const bot = store.getBot(routine.botId);
   if (!bot) throw new Error("例程绑定的 Bot 不存在");
-  const controller = new AbortController();
   const inbox = collab.takeInbox(bot.id);
   const inboxSection = inbox.length
     ? "\n\n## 来自团队的留言\n" + inbox.map((m) => `- ${m.from}：${m.text}`).join("\n")
@@ -293,24 +358,24 @@ async function executeRoutine(routine) {
     client,
     history: [{ role: "user", content: routine.prompt }],
     computer: getComputer(store.getApp(), { botId: bot.id, workspace: bot.workspace }),
-    signal: controller.signal,
+    signal,
     approve: makeApprover({
       runId,
       sessionId: null,
       bot,
       unattended: !routine.allowRisky,
       autoApprove: Boolean(routine.allowRisky),
-      signal: controller.signal,
+      signal,
     }),
     ...buildAgentContext({ store, skillStore, mcpManager, memoryStore }, bot, { appendToPrompt: inboxSection, text: routine.prompt }),
     messageBot: (botName, message) => sendBotMessage(bot, botName, message, runId, null),
     groupChat: (topic, names) =>
-      runGroupChat(bot, topic, names, controller.signal, runId, null, {
+      runGroupChat(bot, topic, names, signal, runId, null, {
         unattended: !routine.allowRisky,
         autoApprove: Boolean(routine.allowRisky),
       }),
     delegate: (botName, task) =>
-      delegateTo(bot, botName, task, controller.signal, runId, null, {
+      delegateTo(bot, botName, task, signal, runId, null, {
         unattended: !routine.allowRisky,
         autoApprove: Boolean(routine.allowRisky),
       }),
@@ -568,14 +633,18 @@ function registerIpc() {
     return { ok: true, routine: { ...r, scheduleText: describeSchedule(r.schedule) } };
   });
   ipcMain.handle("routines:remove", (_e, id) => routineStore.remove(id));
-  ipcMain.handle("routines:runNow", async (_e, id) => {
+  // 立即运行 = 后台启动后立刻返回（不阻塞界面），完成后走 routine:event 通知
+  ipcMain.handle("routines:runNow", (_e, id) => {
     try {
-      const r = await scheduler.runNow(id);
-      return { ok: true, routine: { ...r, scheduleText: describeSchedule(r.schedule) } };
+      const r = scheduler.runNow(id);
+      if (r.alreadyRunning) return { ok: true, alreadyRunning: true };
+      return { ok: true, started: true };
     } catch (error) {
       return { ok: false, message: error.message };
     }
   });
+  ipcMain.handle("routines:stop", (_e, id) => ({ ok: scheduler.stopRoutine(id) }));
+  ipcMain.handle("routines:running", () => scheduler.runningInfo());
 
   ipcMain.handle("mcp:list", () => mcpManager.status());
   ipcMain.handle("mcp:config", () => mcpManager.servers);
@@ -686,9 +755,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMainWindow();
   });
 
   app.whenReady().then(() => {
@@ -718,15 +785,24 @@ if (!gotLock) {
     registerIpc();
     buildMenu();
     createWindow();
+    createTray();
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
 
-  app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+  // 有关窗口关闭的两种情形：
+  // - 有托盘：X 只是 hide，不会触发本事件
+  // - 没有托盘（图标缺失等）：正常关闭 → 必须退出，否则会留下没有窗口的僵尸进程
+  app.on("window-all-closed", () => {
+    if (isQuitting || !tray) app.quit();
+  });
   app.on("before-quit", () => {
+    isQuitting = true;
     for (const c of running.values()) c.abort();
     disposeAll();
-    scheduler?.stop();
+    scheduler?.shutdown();
     mcpManager?.disconnectAll?.();
+    tray?.destroy?.();
+    tray = null;
   });
 }
 

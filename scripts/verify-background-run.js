@@ -100,12 +100,20 @@ async function main() {
       await window.selectSession(${JSON.stringify(setup.b)});
       const bLive=!!document.querySelector('#messages .live');
       const stillRunning=S.runs.has(key);
-      await new Promise(r=>setTimeout(r,2500));
-      const run2=S.runs.get(key);
-      const accGrew=!!run2 && run2.acc.length>before.accLen;
+      // 轮询等首包 / 增长：真实模型的首 token 延迟不稳定，固定等待会误判
+      let accGrew=false;
+      for(let i=0;i<60;i++){
+        await new Promise(r=>setTimeout(r,300));
+        const r2=S.runs.get(key);
+        if(r2 && r2.acc.length>before.accLen){ accGrew=true; break; }
+        if(!r2) break; // 已经跑完
+      }
       await window.selectSession(${JSON.stringify(setup.a)});
-      const backText=document.querySelector('#messages .live .content')?.textContent||'';
-      return {before,bLive,stillRunning,accGrew,backLive:!!document.querySelector('#messages .live'),backText};
+      // 切回时可能还在流式（.live），也可能刚好跑完（已落成普通消息），两种都算「能看到内容」
+      const liveEl=document.querySelector('#messages .live .content');
+      const msgs=[...document.querySelectorAll('#messages .msg.assistant .content, #messages .content')];
+      const backText=liveEl?liveEl.textContent:(msgs.length?msgs[msgs.length-1].textContent:'');
+      return {before,bLive,stillRunning,accGrew,backLive:!!(liveEl||backText),backText};
     })()`);
     ok("运行中显示实时区", midway.before.running && midway.before.live, JSON.stringify(midway.before));
     ok("切到别的对话不显示它的实时区", midway.bLive === false);

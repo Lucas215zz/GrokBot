@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld("api", {
     update: (id, patch) => ipcRenderer.invoke("routines:update", id, patch),
     remove: (id) => ipcRenderer.invoke("routines:remove", id),
     runNow: (id) => ipcRenderer.invoke("routines:runNow", id),
+    stop: (id) => ipcRenderer.invoke("routines:stop", id),
+    running: () => ipcRenderer.invoke("routines:running"),
     onEvent: (handler) => on("routine:event", handler),
   },
 

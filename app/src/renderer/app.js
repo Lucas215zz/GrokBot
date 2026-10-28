@@ -64,6 +64,8 @@ const S = window.gbState = {
   messages: [], connected: false,
   models: [], tools: [], editingBot: null,
   skills: [], currentSkill: null, mcp: [], routines: [], memory: [],
+  // 例程后台运行快照：{ routineId: { startedAt, trigger } }
+  routineRunning: {},
   approvalQueue: [], currentApproval: null, approvalTimer: null,
   // 后台运行中的任务：key = `${botId}:${sessionId}`
   // 允许一边跑一边切到别的对话 / 别的 Bot，切回来还能看到进度
@@ -1109,9 +1111,16 @@ async function saveMemory() {
 /* ---------- 例程（定时任务） ---------- */
 async function openRoutines() {
   S.routines = await window.api.routines.list();
+  S.routineRunning = await window.api.routines.running();
   renderRoutineList();
   $("rtEditor").hidden = true;
   $("routinesModal").hidden = false;
+}
+
+/** 刷新「哪条例程正在后台跑」的快照，再重画列表 */
+async function refreshRoutineState() {
+  try { S.routineRunning = await window.api.routines.running(); } catch { S.routineRunning = {}; }
+  if (!$("routinesModal").hidden) renderRoutineList();
 }
 
 function renderRoutineList() {
@@ -1122,6 +1131,7 @@ function renderRoutineList() {
     return;
   }
   for (const r of S.routines) {
+    const running = Boolean(S.routineRunning?.[r.id]);
     const bot = S.bots.find((b) => b.id === r.botId);
     const row = document.createElement("div");
     row.className = "rt-row";
@@ -1129,27 +1139,44 @@ function renderRoutineList() {
     info.className = "rt-info";
     const n = document.createElement("div");
     n.className = "rt-n";
-    n.textContent = r.name + (r.enabled ? "" : "（已暂停）");
+    n.textContent = r.name + (r.enabled ? "" : "（已暂停）") + (running ? " · 后台运行中" : "");
     const d = document.createElement("div");
     d.className = "rt-d";
     const last = r.logs?.length ? r.logs[r.logs.length - 1] : null;
+    const statusWord = last ? `上次 ${last.stopped ? "已停止" : last.ok ? "成功" : "失败"}` : "未运行";
     d.textContent = `${bot?.emoji || "🤖"} ${bot?.name || "?"} · ${r.scheduleText}` +
-      (last ? ` · 上次 ${last.ok ? "成功" : "失败"} ${new Date(last.at).toLocaleTimeString("zh-CN")}` : " · 未运行");
+      (running ? " · 正在后台执行，可以关窗口" :
+        last ? ` · ${statusWord} ${new Date(last.at).toLocaleTimeString("zh-CN")}` : " · 未运行");
     info.append(n, d);
-
     const act = document.createElement("div");
     act.className = "rt-act";
-    const runBtn = document.createElement("button");
-    runBtn.className = "ghost-btn small";
-    runBtn.textContent = "立即运行";
-    runBtn.addEventListener("click", async () => {
-      runBtn.disabled = true; runBtn.textContent = "运行中…";
-      const res = await window.api.routines.runNow(r.id);
-      runBtn.disabled = false; runBtn.textContent = "立即运行";
-      if (!res.ok) toast(res.message || "运行失败");
-      S.routines = await window.api.routines.list();
-      renderRoutineList();
-    });
+
+    if (running) {
+      // 正在后台跑：按钮变成「停止」，点了立刻中止
+      const stopBtn = document.createElement("button");
+      stopBtn.className = "ghost-btn small danger";
+      stopBtn.textContent = "停止";
+      stopBtn.addEventListener("click", async () => {
+        stopBtn.disabled = true;
+        await window.api.routines.stop(r.id);
+        await refreshRoutineState();
+      });
+      act.append(stopBtn);
+    } else {
+      const runBtn = document.createElement("button");
+      runBtn.className = "ghost-btn small";
+      runBtn.textContent = "立即运行";
+      runBtn.addEventListener("click", async () => {
+        runBtn.disabled = true; runBtn.textContent = "启动中…";
+        const res = await window.api.routines.runNow(r.id);
+        // 后台启动后会立刻返回：把按钮态交给「正在运行」快照决定，别在这里改死
+        if (!res.ok) toast(res.message || "运行失败");
+        else if (res.alreadyRunning) toast("这条例程已经在后台运行了");
+        else toast("已在后台启动，可以随时关闭窗口");
+        await refreshRoutineState();
+      });
+      act.append(runBtn);
+    }
     const toggle = document.createElement("button");
     toggle.className = "ghost-btn small";
     toggle.textContent = r.enabled ? "暂停" : "启用";
@@ -1167,7 +1194,7 @@ function renderRoutineList() {
       S.routines = await window.api.routines.list();
       renderRoutineList();
     });
-    act.append(runBtn, toggle, del);
+    act.append(toggle, del);
     row.append(info, act);
     box.appendChild(row);
   }
@@ -1588,9 +1615,17 @@ function wire() {
   $("cancelRtEdit").addEventListener("click",()=>$("rtEditor").hidden=true);
   $("rtKind").addEventListener("change",syncRtFields);
   window.api.routines.onEvent((ev)=>{
+    if (ev.type==="routine_started") {
+      if (!$("routinesModal").hidden) {
+        window.api.routines.list().then(x=>{S.routines=x; return refreshRoutineState();});
+      }
+      if (ev.trigger==="schedule") toast("例程「"+ev.routine.name+"」已开始后台执行");
+      return;
+    }
     if (ev.type==="routine_done"||ev.type==="routine_failed") {
-      if (!$("routinesModal").hidden) window.api.routines.list().then(x=>{S.routines=x;renderRoutineList();});
-      toast("例程「"+ev.routine.name+"」"+(ev.entry.ok?"完成":"失败"));
+      const stopped = ev.entry?.stopped;
+      window.api.routines.list().then(x=>{S.routines=x; return refreshRoutineState();});
+      toast("例程「"+ev.routine.name+"」"+(stopped?"已停止":ev.entry.ok?"完成":"失败"));
     }
   });
   $("mcpBtn").addEventListener("click",openMcp);

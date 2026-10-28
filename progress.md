@@ -101,7 +101,8 @@ computer/
 
 - 三种触发：间隔 / 每天 / 每周
 - 每 Bot 最多 50 条，每条保留最近 20 条执行记录
-- 同一时刻只跑一条；先推进 nextRunAt 再执行
+- **后台执行**：「立即运行」立刻返回，不阻塞界面；同一条例程不叠跑（手动/定时共用运行表），可随时点「停止」
+- 先推进 nextRunAt 再执行
 - 重启重算不补跑（超 6 小时才重算）
 
 实测：创建「每分钟巡检」后**不做任何操作**，1 分钟后自动完成 6 步、
@@ -116,6 +117,7 @@ computer/
 - 深浅色主题
 - **会话级后台运行**：一段对话在跑时可以直接切走（换对话 / 换 Bot），任务不中断；
   侧栏在该 Bot 和该会话名旁显示运行小圆点，切回来能看到完整实时输出（文本 + 工具轨迹）
+- **系统托盘**：关窗口只是收进托盘（例程继续后台跑），托盘右键「退出」才真正结束
 
 ### 10. 长期记忆
 
@@ -235,6 +237,33 @@ computer/
 实测：`node scripts/verify-bot-pin.js` **10 项全过**（默认/排序/多置顶/不改 updatedAt/取消/持久化/updateBot 路径）；
 界面冒烟新增 5 项（按钮数量/固定态/排序/样式/active 保持）全过。
 
+### 17. 例程后台执行 + 系统托盘
+
+原来的问题：点「立即运行」界面像卡死（按钮永远停在「运行中…」），关窗口又把任务一起杀了。
+
+**根因**（都实测过）：
+
+1. `runNow` 是同步阻塞的，一条例程要跑十几秒才返回，期间界面被占住
+2. `routine:event` 完成时会 `renderRoutineList()` 把按钮节点整个重建，`await` 回来再改的是已脱离 DOM 的旧节点 → 永远卡在禁用态
+3. `window-all-closed → app.quit()`，例程跑在主进程里，进程一退任务就没了
+
+**改法**：
+
+- `scheduler.js` 重写：`#launch()` **不 await**，`runNow()` 立即返回 `{started}`，新增
+  `stopRoutine()` / `isRunning()` / `runningIds()` / `runningInfo()` / `shutdown()`；
+  运行表从 `busy:Set` 换成 `runs:Map<id,{controller,startedAt,trigger}>`，手动/定时共用，天然防叠跑
+- `main.js`：`executeRoutine` 接收调度器传入的 `signal`（不再自建 controller）；
+  新增 `routines:stop` / `routines:running` IPC；新增 `Tray`，`close` 时 `hide()` 进托盘，
+  `before-quit` 置 `isQuitting` 并 `scheduler.shutdown()`；无托盘时回落为正常退出（不留僵尸进程）
+- `app.js`：新增 `S.routineRunning` 快照；运行中按钮变红色「停止」+「正在后台执行，可以关窗口」；
+  完成后显示「上次 已停止/成功/失败」
+- `preload.js` 同步 `routines.stop` / `routines.running`
+- `assets/tray.png`：32×32 托盘图标
+
+实测：`node scripts/verify-routine-scheduler.js` **15 项全过**（立即返回/不叠跑/停止生效/定时也走后台）；
+`node scripts/verify-routine-background.js` **9 项全过**（1.2s 内按钮变「停止」、关窗口后进程存活、
+任务继续跑完 9s 并落盘、可正常退出）。
+
 ---
 
 ## 三、关键决策
@@ -260,7 +289,7 @@ computer/
 | 项 | 值 |
 | --- | --- |
 | 运行方式 | `dist\app\Grok Bot.exe`（双击 `launch.cmd`） |
-| 模型服务 | `http://127.0.0.1:8788/v1`（codex-model-router，已确认在线） |
+| 模型服务 | `https://wbsub2.lusixian.com/v1`（当前实际使用；`deepseek-v4.1-flash`） |
 | 数据目录 | `%APPDATA%\Grok Bot\` |
 | 官方原版 | 完好无损（`D:\Program Files\grokbot\Grok Bot`，哈希 B3A9D130…） |
 | 原版备份 | `work\app.asar`（48.9 MB） |
@@ -281,16 +310,18 @@ computer/
 | 2026-10-28 | **会话级后台运行**：去掉「正在工作中，请先停止」的导航拦截，运行态按对话隔离，可一边跑一边切对话/切 Bot，切回来还能看实时输出 |
 | 2026-10-29 | **`@技能名` 直接调用**：输入框 `@` 自动补全，显式指定即强制加载正文；对话/委派/群聊/例程四入口通用 |
 | 2026-10-29 | **Bot 置顶**：左栏图钉 / 设置里勾选，置顶的固定在最上方，多个置顶按最近置顶排 |
+| 2026-10-29 | **例程后台执行 + 系统托盘**：修掉「立即运行」按钮永远卡在「运行中…」（节点重建后操作旧 DOM）；runNow 改为后台启动立即返回、可点「停止」；关窗口收进托盘，例程继续跑，只有托盘退出才停 |
 
 ### 代码规模
 
 ```
-JS 模块              24 个 / 6456 行（app/src 下的 .js；另有 css 312 行 / html 410 行）
-  renderer/app.js   1735 行
-  main.js            735 行
+JS 模块              24 个 / 6007 行（app/src 下的 .js；另有 css 293 行 / html 394 行）
+  renderer/app.js   1644 行
+  main.js            756 行
+  routines/scheduler.js 147 行（后台执行 / 停止 / 运行态）
   mentions.js        128 行（@ 技能解析）
-验证脚本             14 个 / 2326 行（scripts/）
-docs                 7 份 / 751 行
+验证脚本             16 个 / 2331 行（scripts/，不含 `_*.js` 临时脚本）
+docs                 7 份 / 537 行
 ```
 
 ### 数据目录结构
@@ -415,14 +446,14 @@ npm run verify:cloud   # 等价于 node scripts/verify-cloud.js
 ### 跑全部验证
 
 ```powershell
-npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前端解析 46 + @技能 31 + 模型拉取 8 + 界面冒烟 + 后台运行 17
+npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前端解析 46 + @技能 31 + Bot 置顶 10 + 例程调度 15 + 模型拉取 8 + 窗口边界 + 界面冒烟 + 后台运行 17 + 例程后台端到端 9
 ```
 
-单独跑：`npm run verify:approval` / `verify:approval:e2e` / `verify:mentions` / `verify:skills` / `verify:models` / `verify:ui` / `verify:background`
+单独跑：`npm run verify:approval` / `verify:approval:e2e` / `verify:mentions` / `verify:skills` / `verify:models` / `verify:ui` / `verify:background` / `verify:routines` / `verify:routines:e2e`
 （`verify:mentions` 是解析器 31 项；`verify:mentions:e2e` 是真实模型的实机 6 项，需要先关掉正在运行的 Grok Bot）
 另有 `verify:pins`（Bot 置顶 10 项，纯数据层，不用起界面）。
 
-> `verify:ui`、`verify:models`、`verify:background` 会启动打包后的 exe 并占用调试端口，
+> `verify:ui`、`verify:models`、`verify:background`、`verify:routines:e2e` 会启动打包后的 exe 并占用调试端口，
 > 跑之前先关掉正在运行的 Grok Bot，否则会「CDP 未就绪」。
 
 ### 数据重置
@@ -453,6 +484,13 @@ npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前�
     不要再往 DOM 里直接 append 然后指望切换时不丢。
 16. **技能可以 `@名字` 直接调用**：解析逻辑在 `agent/mentions.js`，跨入口统一由
     `buildAgentContext(..., { text })` 完成，不要再在某个入口单独解析一遍；
+17. **例程是真后台跑**：`scheduler.runNow()` 只负责启动并立即返回，**绝不能再改成 `await`**；
+    界面运行态一律以 `routines:running` 快照为准，不要靠 `runNow` 的返回值判断「跑没跑完」。
+18. **关窗口 ≠ 退出**：`mainWindow.on("close")` 会 `preventDefault()` + `hide()` 进托盘，
+    真正退出必须走 `isQuitting = true` 的路径（托盘菜单 / 菜单栏 / `before-quit`）。
+    新增任何「退出」入口时都要记得置 `isQuitting`，否则会退不掉。
+19. **跑 UI 测试前先杀应用**：`Get-Process Grok* | Stop-Process -Force`。
+    `smoke-ui.js` 的 CDP 端口可用 `GROKBOT_CDP_PORT` 覆盖（默认 9333 可能被本机 Chrome 占用）。
     改动这块务必跑 `node scripts/verify-skill-mention.js`（31 项）。
 17. **Bot 置顶排序在两处**：主进程 `Store.listBots()` 和渲染层 `renderBots()` 各有一份
     完全相同的排序规则（置顶优先 → 最近置顶 → 最近更新）。改排序时两处必须一起改，

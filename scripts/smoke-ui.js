@@ -3,9 +3,11 @@
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 
 const exe = path.resolve(__dirname, "..", "dist", "app", "Grok Bot.exe");
-const PORT = 9333;
+// 端口可被环境变量覆盖：9333 常被本机 Chrome 的调试端口占用（踩过），默认改用 9360
+const PORT = Number(process.env.GROKBOT_CDP_PORT || 9360);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function findPage() {
@@ -13,7 +15,9 @@ async function findPage() {
     try {
       const res = await fetch("http://127.0.0.1:" + PORT + "/json/list");
       const list = await res.json();
-      const page = list.find((t) => t.type === "page");
+      // 只认我们这个应用自己的页面（file:// 加载的渲染层），
+      // 防止端口恰好被别的浏览器占用时连错目标
+      const page = list.find((t) => t.type === "page" && /^file:/.test(t.url || ""));
       if (page) return page;
     } catch {
       /* not ready */
@@ -54,7 +58,20 @@ function attach(ws) {
 
 async function main() {
   if (!fs.existsSync(exe)) throw new Error("找不到 " + exe);
-  const child = spawn(exe, ["--remote-debugging-port=" + PORT], { stdio: "ignore" });
+  // 用独立的临时 userData，避免读到本机真实配置（例如用户把审批调成了 relaxed，
+  // 让「默认策略 balanced」这条断言误报）
+  const userDataDir = path.join(os.tmpdir(), "grokbot-smoke-" + Date.now());
+  fs.mkdirSync(userDataDir, { recursive: true });
+  // 预置一条例程，便于验证「后台执行」相关界面（提示文案 / 立即运行按钮）
+  fs.writeFileSync(path.join(userDataDir, "routines.json"), JSON.stringify({
+    routines: [{
+      id: "rt-smoke", botId: "bot-smoke", name: "冒烟例程", prompt: "随便说一句",
+      schedule: { kind: "interval", minutes: 60 }, enabled: true, allowRisky: false,
+      createdAt: Date.now(), updatedAt: Date.now(), lastRunAt: null,
+      nextRunAt: Date.now() + 3600e3, logs: [],
+    }],
+  }, null, 2));
+  const child = spawn(exe, ["--remote-debugging-port=" + PORT, "--user-data-dir=" + userDataDir], { stdio: "ignore" });
 
   let failures = 0;
   const ok = (name, cond, extra) => {
@@ -79,7 +96,8 @@ async function main() {
 
     // 长对话不能把输入框挤出视口（曾经因 flex min-height:auto 踩过）
     await evaluate(
-      "(()=>{const m=document.getElementById('messages');const d=document.createElement('div');d.style.height='3000px';m.appendChild(d);m.scrollTop=0;})()",
+      // 空会话时 .messages 因 :empty 规则 display:none，先恢复成可见（真实场景里必然有消息）
+      "(()=>{const m=document.getElementById('messages');m.style.display='';const d=document.createElement('div');d.style.height='3000px';m.appendChild(d);m.scrollTop=0;})()",
     );
     const composerBox = await evaluate(
       "(()=>{const r=document.querySelector('.composer').getBoundingClientRect();return JSON.stringify({top:Math.round(r.top),bottom:Math.round(r.bottom),vh:innerHeight});})()",
@@ -103,6 +121,23 @@ async function main() {
     ok("设置内有 4 档策略", await evaluate("document.querySelectorAll('#approvalMode option').length === 4"));
     ok("Bot 内有 5 档策略", await evaluate("document.querySelectorAll('#botApprovalMode option').length === 5"));
     ok("例程有允许危险操作开关", await evaluate("!!document.getElementById('rtAllowRisky')"));
+
+    // ---- 例程：必须是后台执行（不能有「运行中…」卡死的老毛病） ----
+    ok("例程接口暴露 stop/running", await evaluate(
+      "typeof window.api.routines.stop === 'function' && typeof window.api.routines.running === 'function'"
+    ));
+    await evaluate("openRoutines()");
+    await sleep(400);
+    ok("例程列表已渲染", (await evaluate("document.querySelectorAll('#rtList .rt-row').length")) === 1);
+    ok("例程弹窗有后台执行提示", /后台运行/.test(await evaluate("document.querySelector('#routinesModal .field-hint')?.textContent || ''")));
+    ok("例程按钮是「立即运行」", (await evaluate("document.querySelector('#rtList .rt-row .rt-act button').textContent")) === "立即运行");
+    // 运行态快照来自主进程：伪造一个运行中的 id，列表应变成「停止」+ 提示可关窗口
+    await evaluate("window.gbState.routineRunning = { 'rt-smoke': { startedAt: Date.now(), trigger: 'manual' } }; window.renderRoutineList()");
+    ok("运行中按钮变「停止」", (await evaluate("document.querySelector('#rtList .rt-row .rt-act button').textContent")) === "停止");
+    ok("运行中提示可以关窗口", /可以关窗口/.test(await evaluate("document.querySelectorAll('#rtList .rt-row .rt-d')[0].textContent")));
+    ok("运行中显示「后台运行中」", /后台运行中/.test(await evaluate("document.querySelector('#rtList .rt-row .rt-n').textContent")));
+    await evaluate("window.gbState.routineRunning = {}; window.renderRoutineList()");
+    await evaluate("document.getElementById('routinesModal').hidden = true");
 
     // ---- 设置面板：从上游拉取模型 ----
     ok("设置内有「从上游拉取」按钮", await evaluate("!!document.getElementById('fetchModels')"));
