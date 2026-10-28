@@ -26,7 +26,10 @@
 
 ## 启动
 
-双击 `launch.cmd`，或直接运行：
+**不想自己构建**：到 [Releases](https://github.com/Lucas215zz/GrokBot/releases) 下载
+`GrokBot-1.0.0-win-x64.zip`，解压后双击 `Grok Bot.exe` 即可（免安装，内置运行时）。
+
+**从源码跑**：双击 `launch.cmd`，或直接运行：
 
 ```
 dist\app\Grok Bot.exe
