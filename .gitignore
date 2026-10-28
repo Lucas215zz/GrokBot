@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 构建中间产物 / 旧备份
+build/
+*.tmp
+*.original
+
+# 打包产物（637 MB：含 225 MB Electron 运行时）——用 npm run build 重新生成
+dist/
+
+# 运行日志
+*.log
+
+# 临时截图 / 调试脚本
+work-*.png
+scripts/_*.js
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store

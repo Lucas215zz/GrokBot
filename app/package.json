@@ -1,0 +1,10 @@
+{
+  "name": "grokbot-agent",
+  "productName": "Grok Bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Bot desktop agent platform",
+  "main": "src/main/main.js",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "^33.4.11" }
+}

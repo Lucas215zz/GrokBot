@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'" />
+<title>Grok Bot</title>
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body data-theme="dark">
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="brand"><div class="brand-mark"></div><span>Grok Bot</span></div>
+      <button class="icon-btn" id="newBotBtn" title="新建 Bot">+</button>
+    </div>
+    <div class="section-label">Bot</div>
+    <div class="bot-list" id="botList"></div>
+
+    <div class="section-label" id="sessionLabel" hidden>对话</div>
+    <div class="session-list" id="sessionList"></div>
+
+    <div class="sidebar-foot">
+      <button class="ghost-btn" id="skillsBtn">🧩 技能</button>
+      <button class="ghost-btn" id="mcpBtn">🔌 MCP</button>
+      <button class="ghost-btn" id="routinesBtn">⏰ 例程</button>
+      <button class="ghost-btn" id="memoryBtn">🧠 记忆</button>
+      <button class="ghost-btn" id="approvalBtn"><span class="badge-dot" id="approvalBadge" hidden></span>🛡 审批</button>
+      <button class="ghost-btn" id="settingsBtn"><span class="dot" id="connDot"></span>设置</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="bot-head" id="botHead">
+        <div class="bot-avatar" id="botAvatar">🤖</div>
+        <div class="bot-meta">
+          <div class="bot-name" id="botName">未选择 Bot</div>
+          <div class="bot-desc" id="botDesc">从左栏选择一个 Bot 开始</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="computer-chip" id="computerChip" title="Bot 的计算机">本机</button>
+        <button class="computer-chip" id="approvalChip" title="审批策略（点击修改）">🛡 标准</button>
+        <button class="model-chip" id="modelChip" title="切换模型">未选择模型</button>
+        <button class="icon-btn" id="newSessionBtn" title="新对话">✚</button>
+        <button class="icon-btn" id="botSettingsBtn" title="Bot 设置">⚙</button>
+      </div>
+    </header>
+
+    <section class="messages" id="messages"></section>
+
+    <section class="empty" id="emptyState">
+      <div class="empty-logo"></div>
+      <h1>给 Bot 一个任务</h1>
+      <p id="emptyHint">每个 Bot 都有自己的工作目录，可以读写文件、执行命令。</p>
+      <div class="starters">
+        <button class="starter" data-prompt="看一下当前工作目录里有什么文件">看看工作目录</button>
+        <button class="starter" data-prompt="帮我写一个 Python 脚本，统计当前目录下每种文件类型的数量">写个脚本</button>
+        <button class="starter" data-prompt="列出当前目录下最大的 5 个文件">找大文件</button>
+        <button class="starter" data-prompt="解释一下当前工作目录里的项目结构">解释项目</button>
+      </div>
+    </section>
+
+    <footer class="composer-wrap">
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="给 Bot 发消息…（Enter 发送，Shift+Enter 换行，@ 调用技能）"></textarea>
+        <button class="send-btn" id="sendBtn" disabled aria-label="发送"></button>
+      </div>
+      <div class="composer-foot">
+        <span id="statusLine">未连接</span>
+        <span class="spacer"></span>
+        <span id="workspaceLine" class="mono"></span>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<div class="popover mention-popover" id="mentionPop" hidden>
+  <div class="popover-body" id="mentionList"></div>
+</div>
+
+<div class="popover" id="modelPicker" hidden>
+  <div class="popover-head"><input id="modelSearch" placeholder="搜索模型…" /></div>
+  <div class="popover-body" id="modelList"></div>
+  <div class="popover-foot"><span id="modelCount" class="muted"></span><button class="link-btn" id="refreshModels">刷新</button></div>
+</div>
+
+<div class="modal-backdrop" id="botModal" hidden>
+  <div class="modal">
+    <header class="modal-head"><h2 id="botModalTitle">新建 Bot</h2><button class="icon-btn" id="closeBotModal">✕</button></header>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">名称</span><input id="botNameInput" placeholder="例如：代码助手" /></label>
+      <label class="field"><span class="field-label">头像</span><input id="botEmojiInput" placeholder="🤖" maxlength="4" /></label>
+      <label class="field"><span class="field-label">一句话描述</span><input id="botDescInput" placeholder="这个 Bot 负责什么" /></label>
+      <label class="field"><span class="field-label">系统提示词</span><textarea id="botPromptInput" rows="5" placeholder="定义它的角色与做事方式"></textarea></label>
+      <label class="field"><span class="field-label">工作目录</span>
+        <div class="input-row"><input id="botWorkspaceInput" readonly /><button class="ghost-btn small" id="pickWorkspace">选择</button></div>
+        <span class="field-hint">Bot 的所有文件操作都被限制在这个目录内。</span>
+      </label>
+      <div class="field"><span class="field-label">可用工具</span><div class="tool-list" id="toolList"></div></div>
+      <div class="field">
+        <span class="field-label">启用的技能</span>
+        <div class="tool-list" id="botSkillList"></div>
+        <span class="field-hint">不勾选 = 全部技能都可用。</span>
+      </div>
+      <div class="field">
+        <span class="field-label">置顶</span>
+        <label class="check-line"><input type="checkbox" id="botPinnedInput" /> 在左栏固定在最上方</label>
+        <span class="field-hint">也可以用左栏 Bot 右侧的图钉按钮直接切换。</span>
+      </div>
+      <label class="field"><span class="field-label">审批策略</span>
+        <select id="botApprovalMode">
+          <option value="inherit">跟随全局设置</option>
+          <option value="strict">严格（写文件也问）</option>
+          <option value="balanced">标准（推荐）</option>
+          <option value="relaxed">宽松（只拦高危）</option>
+          <option value="off">不审批（不推荐）</option>
+        </select>
+        <span class="field-hint">删除、联网、系统变更、Bot 协作始终会问；「永久拒绝」不可关闭。</span>
+      </label>
+    </div>
+    <footer class="modal-foot">
+      <button class="ghost-btn danger" id="deleteBotBtn" hidden>删除 Bot</button>
+      <span class="spacer"></span>
+      <button class="ghost-btn" id="cancelBotModal">取消</button>
+      <button class="primary-btn" id="saveBotBtn">保存</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal">
+    <header class="modal-head"><h2>设置</h2><button class="icon-btn" id="closeSettings">✕</button></header>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">模型服务地址</span><input id="baseUrl" placeholder="http://127.0.0.1:8788/v1" /></label>
+      <label class="field"><span class="field-label">API Key</span><input id="apiKey" type="password" placeholder="local-router" /></label>
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <span class="field-label">模型</span>
+            <button class="link-btn" type="button" id="fetchModels">从上游拉取</button>
+          </div>
+          <div class="combo" id="modelCombo">
+            <input id="modelInput" placeholder="选择或手动输入模型 ID" autocomplete="off" spellcheck="false" />
+            <button type="button" class="combo-arrow" id="modelToggle" tabindex="-1" aria-label="展开模型列表">▾</button>
+            <div class="combo-pop" id="modelPop" hidden>
+              <div class="combo-head"><input id="modelFilter" placeholder="筛选模型…" autocomplete="off" /></div>
+              <div class="combo-body" id="modelList2"></div>
+            </div>
+          </div>
+          <datalist id="modelOptions"></datalist>
+          <span class="field-hint" id="modelHint"></span>
+        </div>
+        <label class="field"><span class="field-label">推理强度</span>
+          <select id="reasoning"><option value="">默认</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
+        </label>
+      </div>
+      <div class="test-row"><button class="primary-btn" id="testBtn">测试连接</button><span class="test-result" id="testResult"></span></div>
+      <div class="field">
+        <span class="field-label">执行环境（计算机）</span>
+        <select id="computerKind">
+          <option value="local">本机（当前）</option>
+          <option value="remote">云计算机</option>
+        </select>
+        <span class="field-hint">云计算机需先自建服务端，实现 /health、/fs/*、/exec 等接口。</span>
+      </div>
+      <div id="remoteFields" hidden>
+        <label class="field"><span class="field-label">云计算机地址</span><input id="computerBaseUrl" placeholder="https://vm.example.com" /></label>
+        <label class="field"><span class="field-label">访问令牌</span><input id="computerToken" type="password" placeholder="Bearer token" /></label>
+      </div>
+      <label class="field"><span class="field-label">审批策略</span>
+        <select id="approvalMode">
+          <option value="strict">严格（任何写操作都问）</option>
+          <option value="balanced">标准（推荐：删除/联网/系统变更/Bot 协作）</option>
+          <option value="relaxed">宽松（只拦高危：删除/联网/凭据/系统）</option>
+          <option value="off">不审批（只保留永久拒绝）</option>
+        </select>
+        <span class="field-hint">危险操作会先暂停并弹窗；例程默认无人值守，危险操作自动拒绝。</span>
+      </label>
+      <div class="field"><span class="field-label">外观</span>
+        <select id="themeSelect"><option value="dark">深色</option><option value="light">浅色</option></select>
+      </div>
+      <div class="kv"><span>数据目录</span><button class="link-btn" id="revealData">在资源管理器中打开</button></div>
+      <div class="kv"><span>运行环境</span><span id="envInfo" class="muted"></span></div>
+    </div>
+    <footer class="modal-foot"><button class="primary-btn" id="saveSettings">保存</button></footer>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="skillsModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h2>技能</h2>
+      <div style="display:flex;gap:6px">
+        <button class="ghost-btn small" id="importSkillFolder">导入文件夹</button>
+        <button class="ghost-btn small" id="importSkillZip">导入 .zip</button>
+        <button class="ghost-btn small" id="openSkillsDir">打开目录</button>
+        <button class="icon-btn" id="closeSkills">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <div class="skill-layout">
+        <div class="skill-side">
+          <button class="primary-btn small" id="newSkillBtn">+ 新建技能</button>
+          <div class="skill-items" id="skillItems"></div>
+        </div>
+        <div class="skill-main">
+          <div id="skillEmpty" class="muted" style="padding:20px;text-align:center">选择左侧技能查看详情</div>
+          <div id="skillEditor" hidden>
+            <label class="field"><span class="field-label">标识（目录名）</span><input id="skillId" /></label>
+            <label class="field"><span class="field-label">名称</span><input id="skillName" /></label>
+            <label class="field"><span class="field-label">何时使用（描述）</span><textarea id="skillDesc" rows="2" placeholder="模型靠这句话判断是否加载该技能"></textarea></label>
+            <label class="field"><span class="field-label">操作步骤（Markdown）</span><textarea id="skillBody" rows="12" placeholder="具体命令、注意事项、验收标准"></textarea></label>
+            <div class="skill-actions">
+              <button class="ghost-btn danger" id="deleteSkillBtn">删除</button>
+              <span class="spacer"></span>
+              <button class="primary-btn" id="saveSkillBtn">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="mcpModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h2>MCP 服务器</h2>
+      <div style="display:flex;gap:6px">
+        <button class="ghost-btn small" id="addMcpBtn">+ 添加</button>
+        <button class="icon-btn" id="closeMcp">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <p class="field-hint" style="margin:0 0 10px">
+        MCP 让 Bot 获得外部能力（数据库、浏览器、SaaS 等）。添加后工具会以 <code>mcp__服务器__工具</code> 的形式出现。
+      </p>
+      <div class="mcp-list" id="mcpList"></div>
+      <div id="mcpEditor" hidden>
+        <hr style="border:none;border-top:1px solid var(--border2);margin:12px 0" />
+        <label class="field"><span class="field-label">名称（英文，作为工具前缀）</span><input id="mcpName" placeholder="filesystem" /></label>
+        <label class="field"><span class="field-label">传输方式</span>
+          <select id="mcpType">
+            <option value="stdio">stdio（本地进程）</option>
+            <option value="http">http（远程端点）</option>
+          </select>
+        </label>
+        <div id="mcpStdioFields">
+          <label class="field"><span class="field-label">命令</span><input id="mcpCommand" placeholder="npx" /></label>
+          <label class="field"><span class="field-label">参数（每行一个）</span><textarea id="mcpArgs" rows="4" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:work"></textarea></label>
+        </div>
+        <div id="mcpHttpFields" hidden>
+          <label class="field"><span class="field-label">URL</span><input id="mcpUrl" placeholder="https://example.com/mcp" /></label>
+        </div>
+        <div class="skill-actions">
+          <span class="spacer"></span>
+          <button class="ghost-btn" id="cancelMcpEdit">取消</button>
+          <button class="primary-btn" id="saveMcpBtn">保存并连接</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="routinesModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h2>例程（定时任务）</h2>
+      <div style="display:flex;gap:6px">
+        <button class="ghost-btn small" id="addRoutineBtn">+ 新建</button>
+        <button class="icon-btn" id="closeRoutines">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <div class="rt-list" id="rtList"></div>
+      <div id="rtEditor" hidden>
+        <hr style="border:none;border-top:1px solid var(--border2);margin:12px 0" />
+        <label class="field"><span class="field-label">名称</span><input id="rtName" placeholder="每天早上整理待办" /></label>
+        <label class="field"><span class="field-label">交给哪个 Bot</span><select id="rtBot"></select></label>
+        <label class="field"><span class="field-label">每次要它做什么</span><textarea id="rtPrompt" rows="3" placeholder="写清楚要产出的结果"></textarea></label>
+        <div class="field-row">
+          <label class="field"><span class="field-label">触发方式</span>
+            <select id="rtKind">
+              <option value="interval">固定间隔</option>
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+            </select>
+          </label>
+          <label class="field" id="rtIntervalField"><span class="field-label">每隔（分钟）</span><input id="rtMinutes" type="number" min="1" value="60" /></label>
+          <label class="field" id="rtTimeField" hidden><span class="field-label">时刻</span><input id="rtTime" type="time" value="09:00" /></label>
+          <label class="field" id="rtDowField" hidden><span class="field-label">星期</span>
+            <select id="rtDow"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option></select>
+          </label>
+        </div>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" id="rtAllowRisky" style="width:auto" />
+          <span class="field-label" style="margin:0">允许危险操作（删除 / 联网 / 系统变更）</span>
+        </label>
+        <span class="field-hint" style="margin-top:-8px">默认关闭。例程无人值守，关闭时遇到危险操作会安全拒绝并记录原因。</span>
+        <div class="skill-actions">
+          <span class="spacer"></span>
+          <button class="ghost-btn" id="cancelRtEdit">取消</button>
+          <button class="primary-btn" id="saveRtBtn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="memoryModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h2>长期记忆</h2>
+      <div style="display:flex;gap:6px">
+        <button class="ghost-btn small" id="addMemoryBtn">+ 添加</button>
+        <button class="icon-btn" id="closeMemory">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <p class="field-hint" style="margin:0 0 10px">
+        <b>长期偏好</b>每次对话都会带进上下文；<b>任务经验</b>由 Bot 需要时自己检索。
+        「我的」对本机所有 Bot 生效，「本 Bot」只影响当前 Bot。
+      </p>
+      <div class="mem-filter">
+        <select id="memScopeFilter">
+          <option value="all">全部作用域</option>
+          <option value="user">我的（共享）</option>
+          <option value="bot">本 Bot</option>
+        </select>
+        <select id="memTierFilter">
+          <option value="all">全部层级</option>
+          <option value="profile">长期偏好</option>
+          <option value="log">任务经验</option>
+        </select>
+        <input id="memSearchInput" placeholder="搜索记忆…" />
+      </div>
+      <div class="mem-list" id="memList"></div>
+      <div id="memEditor" hidden>
+        <hr style="border:none;border-top:1px solid var(--border2);margin:12px 0" />
+        <div class="field-row">
+          <label class="field"><span class="field-label">主题</span><input id="memTopic" placeholder="称呼 / 报告格式 / 时区" /></label>
+          <label class="field"><span class="field-label">层级</span>
+            <select id="memTier"><option value="profile">长期偏好（每次注入）</option><option value="log">任务经验（按需检索）</option></select>
+          </label>
+        </div>
+        <label class="field"><span class="field-label">作用域</span>
+          <select id="memScope"><option value="user">我的（所有 Bot 共享）</option><option value="bot">仅当前 Bot</option></select>
+        </label>
+        <label class="field"><span class="field-label">内容</span><textarea id="memContent" rows="3" placeholder="要记住的具体内容"></textarea></label>
+        <div class="skill-actions">
+          <span class="spacer"></span>
+          <button class="ghost-btn" id="cancelMemEdit">取消</button>
+          <button class="primary-btn" id="saveMemBtn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="approvalModal" hidden>
+  <div class="modal approval-modal">
+    <header class="modal-head">
+      <h2>⚠ 需要你的确认</h2>
+      <span class="approval-countdown" id="approvalCountdown"></span>
+    </header>
+    <div class="modal-body">
+      <div class="approval-who" id="approvalWho"></div>
+      <div class="approval-tag-row">
+        <span class="approval-tag" id="approvalTag">执行命令</span>
+        <span class="approval-sev" id="approvalSev"></span>
+        <span class="approval-tool mono" id="approvalTool"></span>
+      </div>
+      <p class="approval-reason" id="approvalReason"></p>
+      <pre class="approval-detail" id="approvalDetail"></pre>
+      <div class="approval-actions">
+        <button class="ghost-btn danger" id="approvalDeny">拒绝</button>
+        <span class="spacer"></span>
+        <button class="ghost-btn" id="approvalAllowRun">本次运行都允许</button>
+        <button class="ghost-btn" id="approvalAllowSession">本会话都允许</button>
+        <button class="primary-btn" id="approvalAllowOnce">允许这一次</button>
+      </div>
+      <p class="field-hint" id="approvalQueue"></p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="approvalLogModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h2>审批记录</h2>
+      <div style="display:flex;gap:6px">
+        <button class="ghost-btn small danger" id="clearAuditBtn">清空记录</button>
+        <button class="icon-btn" id="closeApprovalLog">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <p class="field-hint" style="margin:0 0 8px">
+        记录所有「有风险的工具调用」及其结果。<b>只读操作不记录</b>；文件内容不落盘，只留参数摘要。
+      </p>
+      <div class="audit-stats" id="auditStats"></div>
+      <div class="audit-list" id="auditList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<script src="./app.js"></script>
+</body>
+</html>

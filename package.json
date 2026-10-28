@@ -1,0 +1,23 @@
+{
+  "name": "grokbot-agent-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "多 Bot Agent 桌面平台（支持技能 / MCP / 协作 / 定时任务）",
+  "scripts": {
+    "build": "node scripts/build-app.js",
+    "build:install": "node scripts/build-app.js --install",
+    "clean": "node scripts/clean.js",
+    "verify:cloud": "node scripts/verify-cloud.js",
+    "verify:approval": "node scripts/verify-approval.js",
+    "verify:approval:e2e": "node scripts/verify-approval-live.js",
+    "verify:ui": "node scripts/smoke-ui.js",
+    "verify:models": "node scripts/verify-model-fetch.js",
+    "verify:background": "node scripts/verify-background-run.js",
+    "verify:window": "node scripts/verify-window-bounds.js",
+    "verify:skills": "node scripts/verify-skill-frontmatter.js",
+    "verify:mentions": "node scripts/verify-skill-mention.js",
+    "verify:mentions:e2e": "node scripts/verify-mention-live.js",
+    "verify:pins": "node scripts/verify-bot-pin.js",
+    "verify:all": "node scripts/verify-approval.js && node scripts/verify-approval-live.js && node scripts/verify-cloud.js && node scripts/verify-skill-frontmatter.js && node scripts/verify-skill-mention.js && node scripts/verify-bot-pin.js && node scripts/verify-model-fetch.js && node scripts/verify-window-bounds.js && node scripts/smoke-ui.js && node scripts/verify-background-run.js"
+  }
+}
