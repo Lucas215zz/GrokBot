@@ -372,7 +372,11 @@ function classifyTool(tool, args = {}) {
     };
   }
 
-  if (tool === "browser_snapshot" || tool === "browser_screenshot") {
+  if (tool === "browser_snapshot" || tool === "browser_screenshot" || tool === "browser_tabs") {
+    return { category: "safe", blocked: false, label: LABEL.safe, ruleId: null };
+  }
+
+  if (tool === "browser_tab") {
     return { category: "safe", blocked: false, label: LABEL.safe, ruleId: null };
   }
 

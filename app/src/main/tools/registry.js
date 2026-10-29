@@ -104,6 +104,22 @@ const BUILTIN_TOOLS = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "browser_tabs",
+    description:
+      "列出浏览器里当前打开的所有标签页（标题 + 网址）。当同一浏览器开了多个页面、而 snapshot 显示的不是目标网站时，先用它看看有哪些标签。",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "browser_tab",
+    description:
+      "切换到指定标签页（按标题或网址里的关键字，例如 tiktok），之后的 snapshot/click/type 都作用在这个标签上。传空字符串回到默认标签。",
+    parameters: {
+      type: "object",
+      properties: { hint: { type: "string", description: "标签页标题或网址里的关键字，如 tiktok / 飞书" } },
+      required: ["hint"],
+    },
+  },
+  {
     name: "list_bots",
     description: "查看团队里还有哪些 Bot 可以协调（名称与职责）。",
     parameters: { type: "object", properties: {} },

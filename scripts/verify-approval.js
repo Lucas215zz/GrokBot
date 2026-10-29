@@ -270,7 +270,7 @@ async function main() {
         (name) => classifyTool(name, {}).category === "unknown",
       );
       check("所有内置工具都已归类", unclassified, []);
-      check("内置工具数量", BUILTIN_TOOLS.length, 21);
+      check("内置工具数量", BUILTIN_TOOLS.length, 23);
     }
 
     // 清空运行记忆：不能把上一轮的「已拒绝」带到下一轮

@@ -285,6 +285,11 @@ computer/
 实测：`node scripts/verify-local-browser.js` **全绿**（启动/读端口/snapshot/type/click/eval/截图/dispose）；
 接管 9333 能读到真实 TikTok 页面；自有模式打开 example.com 正常。详见 `docs/browser.md`。
 
+**多标签页（2026-10-29 追加）**：一个浏览器常开着多个标签，默认连列表第一个 page 往往不是目标页
+（实测真实浏览器里第一个是「Cookie 商店页」、第二个才是 TikTok 后台）。新增
+`browser_tabs`（列出所有标签）与 `browser_tab { hint }`（按标题/网址关键字或 targetId 切换，
+切换时关旧连接重连新标签）；`snapshot` 在标签 > 1 时附上标签清单。工具数 21 → **23**。
+
 ### 19. 例程结果以 `report_result` 为准（杜绝假成功）
 
 原来 `ok = !error && !aborted` —— 模型只要吐了文字（哪怕内容是「我没能完成」）就记成功，
@@ -297,7 +302,7 @@ computer/
   **未上报 = 失败**，摘要写「模型未上报执行结果（未调用 report_result）」。
 - `report_result` 归为 `safe`，不弹审批。
 
-实测：`verify-routine-report.js`（5 情形）/ `verify-report-tool.js` 全绿；工具数 15 → **21**。
+实测：`verify-routine-report.js`（5 情形）/ `verify-report-tool.js` 全绿；工具数 15 → **21**（多标签页加入后为 23）。
 
 ### 20. 达人样品采集跑通（A）
 
@@ -368,7 +373,7 @@ JS 模块              25 个 / 6673 行（app/src 下的 .js；另有 css 293 �
   renderer/app.js   1723 行
   main.js            782 行
   computer/browser.js 341 行（本机浏览器 / CDP）
-  tools/registry.js  253 行（21 个工具）
+  tools/registry.js  278 行（23 个工具）
   routines/scheduler.js 147 行（后台执行 / 停止 / 运行态）
   mentions.js        128 行（@ 技能解析）
 验证脚本             16 个 / 2460 行（scripts/，不含 `_*.js` 临时脚本）
@@ -574,3 +579,5 @@ npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前�
 22. **`build-app.js` 已改成「就地覆盖 asar」**：targetDir 已存在时只 `copyFileSync` 覆盖
     `resources/app.asar`，不再整体 rm/cp。某些机器上 asar 被残留进程占着 delete 句柄，
     整体删除会把 dist 删一半。改打包逻辑时保留这个分支。
+
+

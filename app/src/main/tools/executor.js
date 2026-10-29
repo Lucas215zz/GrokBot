@@ -95,6 +95,15 @@ async function executeTool(call, ctx) {
       case "browser_screenshot":
         return `截图已保存：${await computer.browserScreenshot()}`;
 
+      case "browser_tabs": {
+        const tabs = await computer.browserTabs();
+        if (!tabs.length) return "当前没有打开的标签页（先用 browser_navigate 打开一个）";
+        return tabs.map((t, i) => `${i + 1}. ${t.title || "(无标题)"} — ${t.url}`).join("\n");
+      }
+
+      case "browser_tab":
+        return await computer.browserUseTab(args.hint);
+
       case "report_result": {
         // 只记录供调度器判定成功/失败，不回传副作用
         const status = ["success", "blocked", "failed"].includes(args.status) ? args.status : "failed";

@@ -112,6 +112,10 @@ class LocalBrowser {
     this.client = null;
     this.external = false;
     this.launching = null;
+    // 目标标签页：null 表示沿用现有行为（列表里第一个 page）；
+    // 也可以是一个关键字（标题/URL 子串），或明确的 targetId。
+    this.targetHint = null;
+    this.targetId = null;
   }
 
   /** attach 模式：连用户已有的 CDP 端点（例如 http://127.0.0.1:9333） */
@@ -126,16 +130,79 @@ class LocalBrowser {
     return res.json();
   }
 
+  /** 列出所有标签页（标题 + URL + id），供 pickTab / listTabs 使用 */
+  async listTabs() {
+    if (!this.port) return [];
+    const list = await this.#httpJson(`http://127.0.0.1:${this.port}/json/list`);
+    return (Array.isArray(list) ? list : [])
+      .filter((t) => t.type === "page")
+      .map((t) => ({ id: t.id, title: t.title || "", url: t.url || "" }));
+  }
+
+  /** 根据 hint（标题/URL 子串，或 targetId）在页面列表里挑一个；挑不到返回 null */
+  #pickFrom(pages) {
+    if (!pages.length) return null;
+    if (this.targetId) {
+      const byId = pages.find((t) => t.id === this.targetId);
+      if (byId) return byId;
+    }
+    const hint = (this.targetHint || "").trim().toLowerCase();
+    if (hint) {
+      const hit = pages.find(
+        (t) => String(t.title || "").toLowerCase().includes(hint) || String(t.url || "").toLowerCase().includes(hint),
+      );
+      if (hit) return hit;
+    }
+    return pages[0];
+  }
+
+  /** 从 /json/list 里挑一个目标标签页的 ws 地址 */
   async #pickPage() {
     const list = await this.#httpJson(`http://127.0.0.1:${this.port}/json/list`);
     const pages = (Array.isArray(list) ? list : []).filter((t) => t.type === "page");
-    if (pages.length) return pages[0].webSocketDebuggerUrl;
+    const chosen = this.#pickFrom(pages);
+    if (chosen) return chosen.webSocketDebuggerUrl;
     try {
       const created = await this.#httpJson(`http://127.0.0.1:${this.port}/json/new?about:blank`);
       return created.webSocketDebuggerUrl;
     } catch {
       throw new Error("浏览器没有可用的页面");
     }
+  }
+
+  /**
+   * 指定要操作的标签页。hint 可以是标题/URL 的子串（如 "tiktok"），
+   * 也可以是 /json/list 里的 targetId；传空则回到默认（第一个页面）。
+   */
+  async useTab(hint) {
+    const want = String(hint || "").trim();
+    if (!want) {
+      this.targetId = null;
+      this.targetHint = null;
+      if (this.client) { try { this.client.close(); } catch { /* ignore */ } this.client = null; }
+      return { ok: true, tab: null, tabs: await this.listTabs() };
+    }
+    const low = want.toLowerCase();
+    // 新建的标签页标题可能还在加载（先是空串），所以轮询一小会儿再判定
+    let pages = [];
+    let hit = null;
+    for (let i = 0; i < 10; i++) {
+      pages = await this.listTabs();
+      hit =
+        pages.find((t) => t.id === want) ||
+        pages.find((t) => t.title.toLowerCase().includes(low) || t.url.toLowerCase().includes(low));
+      if (hit) break;
+      await sleep(200);
+    }
+    if (!hit) {
+      return { ok: false, reason: `没有匹配「${want}」的标签页`, tabs: pages };
+    }
+    this.targetId = hit.id;
+    this.targetHint = want;
+    if (this.client) { try { this.client.close(); } catch { /* ignore */ } this.client = null; }
+    // 立即重连到新标签页，避免后续工具还连在旧页上
+    await this.#connectPage();
+    return { ok: true, tab: hit, tabs: pages };
   }
 
   async #connectPage() {
@@ -284,10 +351,24 @@ class LocalBrowser {
     const lines = (data.elements || []).map(
       (e) => `[${e.uid}] <${e.role}> ${e.name}${e.href ? " → " + e.href : ""}`,
     );
+    // 多标签时把标签清单也带上：模型可能连到了「第一个」标签而不是目标网站，
+    // 先让它看到有哪些标签、再用 browser_tab 切过去。
+    let tabNote = "";
+    try {
+      const tabs = await this.listTabs();
+      if (tabs.length > 1) {
+        const curId = this.targetId || (tabs.find((t) => data.url && t.url === data.url) || {}).id;
+        tabNote =
+          `\n\n浏览器共 ${tabs.length} 个标签页（当前是第 ${tabs.findIndex((t) => t.id === curId) + 1 || 1} 个）：\n` +
+          tabs.map((t, i) => `  ${i + 1}. ${t.title || "(无标题)"} — ${t.url}`).join("\n") +
+          (this.targetId ? "" : "\n（若目标不是当前标签，用 browser_tab 传标题/网址关键字切换）");
+      }
+    } catch { /* ignore */ }
     return (
       `页面：${data.title || ""}（${data.url || ""}）\n` +
       `可交互元素 ${data.count} 个：\n` +
-      (lines.join("\n") || "（没有可交互元素）")
+      (lines.join("\n") || "（没有可交互元素）") +
+      tabNote
     );
   }
 
@@ -355,6 +436,7 @@ class LocalBrowser {
       port: this.port,
       pid: this.proc ? this.proc.pid : null,
       attach: this.attachEndpoint || null,
+      target: this.targetId || this.targetHint || null,
     };
   }
 

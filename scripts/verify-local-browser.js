@@ -74,6 +74,42 @@ const ok = (n, c, extra = "") => { console.log(`  ${c ? "✓" : "✗"} ${n}${ext
     const file = await b.screenshot();
     ok("截图已落盘", fs.existsSync(file) && fs.statSync(file).size > 1000, file);
 
+    console.log("\n[5] 多标签：列出 / 切换");
+    // 新开一个标签页（新版 Chrome 的 /json/new 只接受 PUT）
+    // 标题用 ASCII，避免 data: URL 缺 charset 时被按本地编码解码导致比对不上
+    const newTabUrl = "data:text/html," + encodeURIComponent("<title>TabTwo</title><h1>tab2</h1>");
+    let created = null;
+    for (const method of ["PUT", "GET"]) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${b.port}/json/new?${encodeURIComponent(newTabUrl)}`, { method });
+        if (res.ok) { created = await res.json(); break; }
+      } catch { /* 换下一个方法 */ }
+    }
+    ok("能新开一个标签页", Boolean(created && created.id), created ? created.id : "创建失败");
+
+    const tabs = await b.listTabs();
+    ok("listTabs 列出 >= 2 个标签", tabs.length >= 2, String(tabs.length));
+
+    const pick = await b.useTab("TabTwo");
+    // 新建标签可能标题还没加载完，URL 命中即视为正确切到目标标签
+    ok(
+      "按标题/网址关键字切到目标标签",
+      pick.ok === true && /tabtwo/i.test((pick.tab?.title || "") + (pick.tab?.url || "")),
+      JSON.stringify(pick.tab || pick.reason),
+    );
+    const curTitle = await b.eval("document.title");
+    ok("切换后 eval 作用在新标签", curTitle === "TabTwo", JSON.stringify(curTitle));
+
+    // 用 targetId 精确切换也应可用
+    const backById = await b.useTab(tabs.find((t) => /测试页|data:text\/html/.test(t.title + t.url))?.id || "");
+    ok("按 targetId 切换也可用", backById.ok === true, JSON.stringify(backById.tab || backById.reason));
+
+    const miss = await b.useTab("绝不存在的标签xyz");
+    ok("找不到时明确报错并给出清单", miss.ok === false && Array.isArray(miss.tabs), String(miss.tabs?.length));
+
+    // 切回第一个标签，避免影响后面的 dispose 流程
+    await b.useTab("");
+
     console.log("\n[5] dispose 关掉自有进程");
     const pid = b.proc ? b.proc.pid : null;
     b.dispose();

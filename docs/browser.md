@@ -49,6 +49,8 @@ chrome.exe
 | `browser_type` | 往某个 `gbN` 输入文本（可 `submit`） | network |
 | `browser_eval` | 在页面里执行任意 JS（返回其值） | script |
 | `browser_screenshot` | 截图存到 `<userData>/screenshots/` | safe |
+| `browser_tabs` | 列出浏览器里所有标签页（标题 + 网址） | safe |
+| `browser_tab` | 按标题/网址关键字（或 targetId）切换工作标签页；传空回到默认 | safe |
 
 `snapshot` 返回的形如：
 
@@ -61,6 +63,20 @@ chrome.exe
 ```
 
 模型先 `snapshot` 拿到 `gbN`，再 `click` / `type`，很稳（不依赖猜测的 CSS 选择器）。
+
+## 多标签页
+
+一个浏览器常常开着好几个标签（比如「Cookie 商店页」+「TikTok 后台」）。默认行为是
+**连列表里的第一个 page**，很可能不是你想操作的那个。因此：
+
+- `snapshot` 在标签数 > 1 时会在末尾附上「标签页清单」和当前是第几个；
+- 用 `browser_tabs` 可随时单独列一遍；
+- 用 `browser_tab { hint: "tiktok" }` 按标题/网址关键字切过去（也可传 targetId 精确匹配），
+  之后的 `snapshot / click / type / eval / screenshot` 都作用在这个标签上；
+- 传 `hint: ""` 回到默认（第一个标签）。
+
+切换是即时的：`useTab` 会关掉旧连接、重连到目标标签页。找不到时直接返回错误并列出
+当前所有标签，不会「静默点到错的页面上」。
 
 ## 设置里的「本机浏览器」
 

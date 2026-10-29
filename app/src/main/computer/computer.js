@@ -57,6 +57,8 @@ class Computer {
   async browserType(_uid, _text, _opts) { throw new Error("这台计算机不支持浏览器输入"); }
   async browserEval(_expression) { throw new Error("这台计算机不支持浏览器脚本"); }
   async browserScreenshot() { throw new Error("这台计算机不支持浏览器截图"); }
+  async browserTabs() { return []; }
+  async browserUseTab(_hint) { throw new Error("这台计算机不支持多标签切换"); }
   browserStatus() { return { running: false, external: false, port: null, pid: null }; }
 
   // ---------------- 人机接管 ----------------

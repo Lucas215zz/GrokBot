@@ -236,6 +236,17 @@ class LocalComputer extends Computer {
   async browserScreenshot() {
     return this.#browserInstance().screenshot(this.userDataDir ? path.join(this.userDataDir, "screenshots") : undefined);
   }
+  async browserTabs() {
+    return this.#browserInstance().listTabs();
+  }
+  async browserUseTab(hint) {
+    const r = await this.#browserInstance().useTab(hint);
+    if (!r.ok) {
+      const lines = (r.tabs || []).map((t, i) => `  ${i + 1}. ${t.title || "(无标题)"} — ${t.url}`);
+      throw new Error(`${r.reason}。当前标签页：\n${lines.join("\n") || "（无）"}`);
+    }
+    return `已切换标签页：${r.tab ? r.tab.title || r.tab.url : "默认"}`;
+  }
   /** 直接把浏览器窗口拉起来（供设置里「打开浏览器」用，首次便于人工登录） */
   async ensureBrowser() {
     await this.#browserInstance().ensure();
