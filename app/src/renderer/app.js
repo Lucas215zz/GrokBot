@@ -66,6 +66,8 @@ const S = window.gbState = {
   skills: [], currentSkill: null, mcp: [], routines: [], memory: [],
   // 例程后台运行快照：{ routineId: { startedAt, trigger } }
   routineRunning: {},
+  // 例程编辑器当前在编辑哪一条（null = 新建）
+  editingRoutineId: null,
   approvalQueue: [], currentApproval: null, approvalTimer: null,
   // 后台运行中的任务：key = `${botId}:${sessionId}`
   // 允许一边跑一边切到别的对话 / 别的 Bot，切回来还能看到进度
@@ -1113,6 +1115,7 @@ async function openRoutines() {
   S.routines = await window.api.routines.list();
   S.routineRunning = await window.api.routines.running();
   renderRoutineList();
+  S.editingRoutineId = null;
   $("rtEditor").hidden = true;
   $("routinesModal").hidden = false;
 }
@@ -1185,6 +1188,10 @@ function renderRoutineList() {
       S.routines = await window.api.routines.list();
       renderRoutineList();
     });
+    const edit = document.createElement("button");
+    edit.className = "ghost-btn small";
+    edit.textContent = "编辑";
+    edit.addEventListener("click", () => editRoutine(r.id));
     const del = document.createElement("button");
     del.className = "ghost-btn small danger";
     del.textContent = "删除";
@@ -1194,7 +1201,7 @@ function renderRoutineList() {
       S.routines = await window.api.routines.list();
       renderRoutineList();
     });
-    act.append(toggle, del);
+    act.append(toggle, edit, del);
     row.append(info, act);
     box.appendChild(row);
   }
@@ -1208,12 +1215,17 @@ function syncRtFields() {
 }
 
 function newRoutine() {
+  // null = 新建；否则是被编辑的例程 id
+  S.editingRoutineId = null;
+  $("rtEditorTitle").textContent = "新建例程";
+  $("saveRtBtn").textContent = "保存";
   $("rtEditor").hidden = false;
   $("rtName").value = "";
   $("rtPrompt").value = "";
   $("rtKind").value = "interval";
   $("rtMinutes").value = "60";
   $("rtTime").value = "09:00";
+  $("rtDow").value = "1";
   $("rtAllowRisky").checked = false;
   const sel = $("rtBot");
   sel.innerHTML = "";
@@ -1224,7 +1236,48 @@ function newRoutine() {
     sel.appendChild(o);
   }
   if (S.botId) sel.value = S.botId;
+  sel.disabled = false;
   syncRtFields();
+}
+
+/** 打开编辑：把已有例程的值回填进同一个编辑器 */
+function editRoutine(id) {
+  const r = (S.routines || []).find((x) => x.id === id);
+  if (!r) return toast("例程不存在");
+  S.editingRoutineId = id;
+  $("rtEditorTitle").textContent = "编辑例程";
+  $("saveRtBtn").textContent = "保存修改";
+
+  // Bot 下拉可能还没渲染（例如直接刷新过），先保证选项齐全
+  const sel = $("rtBot");
+  if (!sel.options.length) {
+    for (const b of S.bots) {
+      const o = document.createElement("option");
+      o.value = b.id;
+      o.textContent = (b.emoji || "🤖") + " " + b.name;
+      sel.appendChild(o);
+    }
+  }
+  sel.value = r.botId;
+
+  $("rtName").value = r.name || "";
+  $("rtPrompt").value = r.prompt || "";
+  $("rtAllowRisky").checked = Boolean(r.allowRisky);
+
+  const s = r.schedule || { kind: "interval", minutes: 60 };
+  $("rtKind").value = s.kind;
+  if (s.kind === "interval") {
+    $("rtMinutes").value = String(s.minutes || 60);
+  } else if (s.kind === "daily") {
+    $("rtTime").value = s.time || "09:00";
+  } else {
+    $("rtDow").value = String(s.dayOfWeek ?? 1);
+    $("rtTime").value = s.time || "09:00";
+  }
+  syncRtFields();
+  $("rtEditor").hidden = false;
+  $("rtEditor").scrollIntoView({ block: "nearest" });
+  $("rtName").focus();
 }
 
 async function saveRoutine() {
@@ -1243,15 +1296,19 @@ async function saveRoutine() {
         ? { kind, time: $("rtTime").value || "09:00" }
         : { kind, dayOfWeek: Number($("rtDow").value), time: $("rtTime").value || "09:00" };
 
-  const r = await window.api.routines.create({
-    botId, name, prompt, schedule,
-    allowRisky: $("rtAllowRisky").checked,
-  });
+  const editingId = S.editingRoutineId;
+  const payload = { botId, name, prompt, schedule, allowRisky: $("rtAllowRisky").checked };
+  const r = editingId
+    ? await window.api.routines.update(editingId, payload)
+    : await window.api.routines.create(payload);
   if (!r.ok) return toast(r.message);
   S.routines = await window.api.routines.list();
   renderRoutineList();
   $("rtEditor").hidden = true;
-  toast("已创建，下次运行：" + new Date(r.routine.nextRunAt).toLocaleString("zh-CN"));
+  S.editingRoutineId = null;
+  const next = r.routine?.nextRunAt;
+  toast((editingId ? "已保存修改" : "已创建") +
+    (next ? "，下次运行：" + new Date(next).toLocaleString("zh-CN") : ""));
 }
 
 /* ---------- MCP ---------- */
@@ -1612,7 +1669,7 @@ function wire() {
   $("closeRoutines").addEventListener("click",()=>$("routinesModal").hidden=true);
   $("addRoutineBtn").addEventListener("click",newRoutine);
   $("saveRtBtn").addEventListener("click",saveRoutine);
-  $("cancelRtEdit").addEventListener("click",()=>$("rtEditor").hidden=true);
+  $("cancelRtEdit").addEventListener("click",()=>{ $("rtEditor").hidden=true; S.editingRoutineId=null; });
   $("rtKind").addEventListener("change",syncRtFields);
   window.api.routines.onEvent((ev)=>{
     if (ev.type==="routine_started") {

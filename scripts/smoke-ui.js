@@ -62,10 +62,20 @@ async function main() {
   // 让「默认策略 balanced」这条断言误报）
   const userDataDir = path.join(os.tmpdir(), "grokbot-smoke-" + Date.now());
   fs.mkdirSync(userDataDir, { recursive: true });
+  // 预置一个 Bot（否则例程编辑器的「交给哪个 Bot」下拉是空的，保存会被拦下）
+  const botId = "bot-smoke";
+  const workspace = path.join(userDataDir, "workspaces", botId);
+  fs.mkdirSync(path.join(userDataDir, "bots", botId, "sessions"), { recursive: true });
+  fs.mkdirSync(workspace, { recursive: true });
+  fs.writeFileSync(path.join(userDataDir, "bots", botId, "bot.json"), JSON.stringify({
+    id: botId, name: "冒烟 Bot", description: "", systemPrompt: "用简体中文。",
+    emoji: "🤖", enabledSkills: [], approvalMode: "inherit", pinned: false, pinnedAt: null,
+    workspace, createdAt: Date.now(), updatedAt: Date.now(),
+  }, null, 2));
   // 预置一条例程，便于验证「后台执行」相关界面（提示文案 / 立即运行按钮）
   fs.writeFileSync(path.join(userDataDir, "routines.json"), JSON.stringify({
     routines: [{
-      id: "rt-smoke", botId: "bot-smoke", name: "冒烟例程", prompt: "随便说一句",
+      id: "rt-smoke", botId, name: "冒烟例程", prompt: "随便说一句",
       schedule: { kind: "interval", minutes: 60 }, enabled: true, allowRisky: false,
       createdAt: Date.now(), updatedAt: Date.now(), lastRunAt: null,
       nextRunAt: Date.now() + 3600e3, logs: [],
@@ -137,6 +147,36 @@ async function main() {
     ok("运行中提示可以关窗口", /可以关窗口/.test(await evaluate("document.querySelectorAll('#rtList .rt-row .rt-d')[0].textContent")));
     ok("运行中显示「后台运行中」", /后台运行中/.test(await evaluate("document.querySelector('#rtList .rt-row .rt-n').textContent")));
     await evaluate("window.gbState.routineRunning = {}; window.renderRoutineList()");
+
+    // ---- 例程可编辑：设置错了能改回来 ----
+    ok("每条例程都有「编辑」按钮", await evaluate(
+      "[...document.querySelectorAll('#rtList .rt-row .rt-act button')].some(b => b.textContent === '编辑')"
+    ));
+    ok("编辑前是「新建例程」标题", (await evaluate("document.getElementById('rtEditorTitle').textContent")) === "新建例程");
+    await evaluate("editRoutine('rt-smoke')");
+    await sleep(200);
+    ok("点编辑后编辑器已打开", (await evaluate("document.getElementById('rtEditor').hidden")) === false);
+    ok("标题变成「编辑例程」", (await evaluate("document.getElementById('rtEditorTitle').textContent")) === "编辑例程");
+    ok("按钮变成「保存修改」", (await evaluate("document.getElementById('saveRtBtn').textContent")) === "保存修改");
+    const filled = await evaluate("JSON.stringify({name:document.getElementById('rtName').value,prompt:document.getElementById('rtPrompt').value,kind:document.getElementById('rtKind').value,minutes:document.getElementById('rtMinutes').value})");
+    ok("已有值已回填", (() => { const o = JSON.parse(filled); return o.name === "冒烟例程" && o.prompt === "随便说一句" && o.kind === "interval" && o.minutes === "60"; })(), filled);
+    // 改成每天 08:30、换个名字，保存后必须走 update（不新增一条）
+    await evaluate("(()=>{document.getElementById('rtName').value='改过的例程';document.getElementById('rtKind').value='daily';document.getElementById('rtTime').value='08:30';window.syncRtFields();})()");
+    await evaluate("saveRoutine()");
+    await sleep(500);
+    const after = await evaluate("JSON.stringify((window.gbState.routines||[]).map(r=>({id:r.id,name:r.name,kind:r.schedule.kind,time:r.schedule.time,text:r.scheduleText})))");
+    ok("编辑后仍然只有一条（走的是更新不是新建）", (() => { const a = JSON.parse(after); return a.length === 1; })(), after);
+    ok("编辑后的值已持久化", (() => {
+      const a = JSON.parse(after)[0];
+      return a && a.name === "改过的例程" && a.kind === "daily" && a.time === "08:30";
+    })(), after);
+    // 取消编辑：不应改动数据
+    await evaluate("editRoutine('rt-smoke')");
+    await evaluate("document.getElementById('rtName').value='不该保存的名字'");
+    await evaluate("document.getElementById('cancelRtEdit').click()");
+    await sleep(200);
+    ok("取消编辑不改数据", (await evaluate("(window.gbState.routines||[])[0].name")) === "改过的例程");
+    ok("取消编辑后 editingRoutineId 已清空", (await evaluate("window.gbState.editingRoutineId")) === null);
     await evaluate("document.getElementById('routinesModal').hidden = true");
 
     // ---- 设置面板：从上游拉取模型 ----
