@@ -51,16 +51,30 @@ function build(targetDir) {
     throw new Error("找不到 Electron 运行时：" + runtimeSrc + "（可用 GROKBOT_RUNTIME 指定）");
   }
   const asar = packAsar();
+  const res = path.join(targetDir, "resources");
+  const official = path.join(res, "app.asar");
+  const targetExe = path.join(targetDir, "Grok Bot.exe");
+
+  // 目标已存在时「就地覆盖 asar」，不删除整个 targetDir。
+  // 某些机器上 dist/app/resources/app.asar 会被残留进程占着 delete 句柄
+  // （文件本身可写，但 unlink/rename 会被拒），整体 rm/cp 会把 dist 删一半。
+  if (fs.existsSync(targetExe)) {
+    log("目标已存在，就地覆盖 asar → " + official);
+    fs.mkdirSync(path.dirname(official), { recursive: true });
+    fs.copyFileSync(asar, official); // copyFileSync 会 truncate 写入，不受 unlink 限制
+    writeFuse(targetExe);
+    log("完成：" + targetDir);
+    return targetDir;
+  }
+
   log("复制运行时 → " + targetDir);
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.cpSync(runtimeSrc, targetDir, {
     recursive: true,
-    // 源目录里可能残留历史备份，不复制进产物（我们自己会建 official.asar.bak）
+    // 源目录里可能残留历史备份，不复制进产物
     filter: (src) => !/[\\/]app\.asar\.original$/.test(src),
   });
 
-  const res = path.join(targetDir, "resources");
-  const official = path.join(res, "app.asar");
   // 只保留一份官方备份；重复构建时不覆盖、不堆积 48.9 MB 副本
   const backup = path.join(res, "official.asar.bak");
   if (fs.existsSync(official) && !fs.existsSync(backup)) {
@@ -70,7 +84,7 @@ function build(targetDir) {
   }
   fs.copyFileSync(asar, path.join(res, "app.asar"));
 
-  writeFuse(path.join(targetDir, "Grok Bot.exe"));
+  writeFuse(targetExe);
   log("完成：" + targetDir);
   return targetDir;
 }

@@ -6,7 +6,7 @@ const { Store } = require("./store/store");
 const { ModelClient } = require("./agent/model-client");
 const { runAgent } = require("./agent/loop");
 const { BUILTIN_TOOLS } = require("./tools/registry");
-const { getComputer, disposeAll } = require("./computer/factory");
+const { getComputer, disposeAll, setUserDataDir } = require("./computer/factory");
 const { SkillStore } = require("./skills/skill-store");
 const { McpManager } = require("./mcp/mcp-manager");
 const { CollabBus } = require("./collab/collab-bus");
@@ -354,11 +354,14 @@ async function executeRoutine(routine, signal) {
 
   // 例程是无人值守的：审批默认拒绝，只有例程显式允许时才放行
   const runId = "routine-" + routine.id + "-" + Date.now().toString(36);
+  // 结果上报容器：模型调用 report_result 时写入，调度器据此判定成功/失败
+  const report = { status: null, summary: "", details: "", reportedAt: null };
   return await runAgent({
     client,
     history: [{ role: "user", content: routine.prompt }],
     computer: getComputer(store.getApp(), { botId: bot.id, workspace: bot.workspace }),
     signal,
+    report,
     approve: makeApprover({
       runId,
       sessionId: null,
@@ -710,6 +713,7 @@ function registerIpc() {
       capabilities: computer.capabilities(),
       health: await computer.health(),
       screenUrl: computer.screenUrl(),
+      browser: typeof computer.browserStatus === "function" ? computer.browserStatus() : null,
       rootDir: computer.kind === "local" ? bot.workspace : (cfg.baseUrl || ""),
       persistent: computer.kind === "remote",
     };
@@ -722,6 +726,29 @@ function registerIpc() {
     const computer = getComputer(store.getApp(), { botId: bot.id, workspace: bot.workspace });
     if (typeof computer.refreshScreenUrl === "function") await computer.refreshScreenUrl();
     return { url: computer.screenUrl() };
+  });
+
+  /** 本机浏览器：在界面上点一下就把它拉起来（首次便于人工登录一次） */
+  ipcMain.handle("computer:browser-open", async (_e, botId) => {
+    const bot = botId ? store.getBot(botId) : store.listBots()[0];
+    if (!bot) return { ok: false, message: "没有可用的 Bot" };
+    const computer = getComputer(store.getApp(), { botId: bot.id, workspace: bot.workspace });
+    if (typeof computer.ensureBrowser !== "function") {
+      return { ok: false, message: "当前执行环境不支持本机浏览器（请切回本机模式）" };
+    }
+    try {
+      const status = await computer.ensureBrowser();
+      return { ok: true, status };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  });
+
+  ipcMain.handle("computer:browser-status", async (_e, botId) => {
+    const bot = botId ? store.getBot(botId) : store.listBots()[0];
+    if (!bot) return { running: false };
+    const computer = getComputer(store.getApp(), { botId: bot.id, workspace: bot.workspace });
+    return typeof computer.browserStatus === "function" ? computer.browserStatus() : { running: false };
   });
 }
 
@@ -759,6 +786,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    setUserDataDir(app.getPath("userData"));
     store = new Store(app.getPath("userData"));
     client = new ModelClient(() => store.getApp());
     skillStore = new SkillStore(app.getPath("userData"));

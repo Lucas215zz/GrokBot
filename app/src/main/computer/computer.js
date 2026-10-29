@@ -51,6 +51,14 @@ class Computer {
   // ---------------- 浏览器（云端才有） ----------------
   async navigate(_url) { throw new Error("这台计算机不支持浏览器"); }
 
+  // 更细的浏览器操作：默认不支持，由具体实现覆盖
+  async browserSnapshot() { throw new Error("这台计算机不支持浏览器快照"); }
+  async browserClick(_uid) { throw new Error("这台计算机不支持浏览器点击"); }
+  async browserType(_uid, _text, _opts) { throw new Error("这台计算机不支持浏览器输入"); }
+  async browserEval(_expression) { throw new Error("这台计算机不支持浏览器脚本"); }
+  async browserScreenshot() { throw new Error("这台计算机不支持浏览器截图"); }
+  browserStatus() { return { running: false, external: false, port: null, pid: null }; }
+
   // ---------------- 人机接管 ----------------
   /** @returns {Promise<{status:"not-needed"|"resolved"|"pending", detail?:string}>} */
   async requestTakeover(_reason) {

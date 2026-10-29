@@ -9,26 +9,45 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { Computer } = require("./computer");
+const { LocalBrowser, findBrowserExe } = require("./browser");
 
 const MAX_READ_BYTES = 200 * 1024;
 const MAX_OUTPUT_CHARS = 20000;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "__pycache__", ".venv"]);
 
 class LocalComputer extends Computer {
-  constructor({ id = "local", rootDir }) {
+  constructor({ id = "local", rootDir, userDataDir, browserConfig }) {
     super({ id, kind: "local" });
     this.rootDir = path.resolve(rootDir);
     fs.mkdirSync(this.rootDir, { recursive: true });
+    this.userDataDir = userDataDir || null;
+    this.browserConfig = browserConfig || {};
+    this._browser = null; // 懒创建：第一次真正用到浏览器时才拉起 Chrome
   }
 
   capabilities() {
     return {
       terminal: true,
       filesystem: true,
-      browser: false,
+      browser: Boolean(this.userDataDir) || Boolean(this.browserConfig?.attach) || Boolean(findBrowserExe()),
       screen: false,
       persistent: false,
     };
+  }
+
+  /** 懒获取本机浏览器实例 */
+  #browserInstance() {
+    if (!this._browser) {
+      this._browser = new LocalBrowser({
+        userDataDir: this.userDataDir || path.join(this.rootDir, ".grokbot-browser"),
+        config: this.browserConfig,
+      });
+    }
+    return this._browser;
+  }
+
+  browserStatus() {
+    return this._browser ? this._browser.status() : { running: false, external: false, port: null, pid: null };
   }
 
   async health() {
@@ -196,6 +215,36 @@ class LocalComputer extends Computer {
         resolve({ code, stdout, stderr, timedOut });
       });
     });
+  }
+
+  // ---------------- 浏览器（本机自动化） ----------------
+  async navigate(url) {
+    return this.#browserInstance().navigate(url);
+  }
+  async browserSnapshot() {
+    return this.#browserInstance().snapshot();
+  }
+  async browserClick(uid) {
+    return this.#browserInstance().click(uid);
+  }
+  async browserType(uid, text, opts) {
+    return this.#browserInstance().type(uid, text, opts);
+  }
+  async browserEval(expression) {
+    return this.#browserInstance().eval(expression);
+  }
+  async browserScreenshot() {
+    return this.#browserInstance().screenshot(this.userDataDir ? path.join(this.userDataDir, "screenshots") : undefined);
+  }
+  /** 直接把浏览器窗口拉起来（供设置里「打开浏览器」用，首次便于人工登录） */
+  async ensureBrowser() {
+    await this.#browserInstance().ensure();
+    return this.browserStatus();
+  }
+
+  dispose() {
+    try { this._browser?.dispose?.(); } catch { /* ignore */ }
+    this._browser = null;
   }
 }
 

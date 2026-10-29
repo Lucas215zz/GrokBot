@@ -168,6 +168,14 @@
         <label class="field"><span class="field-label">云计算机地址</span><input id="computerBaseUrl" placeholder="https://vm.example.com" /></label>
         <label class="field"><span class="field-label">访问令牌</span><input id="computerToken" type="password" placeholder="Bearer token" /></label>
       </div>
+      <div class="field" id="browserRow">
+        <span class="field-label">本机浏览器</span>
+        <div class="test-row">
+          <button class="primary-btn" type="button" id="openBrowserBtn">打开浏览器</button>
+          <span class="test-result" id="browserStatus">未启动</span>
+        </div>
+        <span class="field-hint">Bot 会用独立 profile 自启一个 Chrome（登录态会保存）。第一次需要在这里登录一次 TikTok，之后定时任务就能自己操作网页了。</span>
+      </div>
       <label class="field"><span class="field-label">审批策略</span>
         <select id="approvalMode">
           <option value="strict">严格（任何写操作都问）</option>

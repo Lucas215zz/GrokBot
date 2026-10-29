@@ -752,9 +752,16 @@ async function fetchModelsFromUpstream({ silent = false } = {}) {
   fillModelOptions(S.models);
   if (!$("modelPop").hidden) renderSettingsModelList($("modelFilter").value);
 
-  // 只填了地址就自动挑一个默认，省得用户还得自己输 ID
-  if (!$("modelInput").value.trim() && S.models.length) {
+  // 自动挑一个可用的默认模型，省得用户自己输 ID。
+  // 注意：如果输入框里是旧模型（换了地址/密钥后已不在上游列表里），也要纠正过来，
+  // 否则用户会看到「拉下来了但框里还是个不存在的模型」，以为没拉到。
+  const cur = $("modelInput").value.trim();
+  if (S.models.length && (!cur || !S.models.includes(cur))) {
     $("modelInput").value = pickDefaultModel(S.models);
+  }
+  // 手动点「从上游拉取」时，把下拉展开，让用户直接看到拉到了哪些
+  if (!silent && S.models.length && $("modelPop").hidden) {
+    openSettingsModelPop(false);
   }
 
   if (S.models.length) setModelHint(`已拉取 ${S.models.length} 个模型，可直接下拉选择`, "ok");
@@ -1146,7 +1153,9 @@ function renderRoutineList() {
     const d = document.createElement("div");
     d.className = "rt-d";
     const last = r.logs?.length ? r.logs[r.logs.length - 1] : null;
-    const statusWord = last ? `上次 ${last.stopped ? "已停止" : last.ok ? "成功" : "失败"}` : "未运行";
+    const statusWord = last
+      ? `上次 ${last.stopped ? "已停止" : last.blocked ? "受阻" : last.ok ? "成功" : "失败"}`
+      : "未运行";
     d.textContent = `${bot?.emoji || "🤖"} ${bot?.name || "?"} · ${r.scheduleText}` +
       (running ? " · 正在后台执行，可以关窗口" :
         last ? ` · ${statusWord} ${new Date(last.at).toLocaleTimeString("zh-CN")}` : " · 未运行");
@@ -1682,7 +1691,9 @@ function wire() {
     if (ev.type==="routine_done"||ev.type==="routine_failed") {
       const stopped = ev.entry?.stopped;
       window.api.routines.list().then(x=>{S.routines=x; return refreshRoutineState();});
-      toast("例程「"+ev.routine.name+"」"+(stopped?"已停止":ev.entry.ok?"完成":"失败"));
+      const e = ev.entry || {};
+      toast("例程「"+ev.routine.name+"」"+(stopped ? "已停止" : e.ok ? "完成" : e.blocked ? "受阻，待处理" : "失败")
+        + (e.summary ? "：" + String(e.summary).slice(0, 80) : ""));
     }
   });
   $("mcpBtn").addEventListener("click",openMcp);
@@ -1703,6 +1714,21 @@ function wire() {
   $("saveSettings").addEventListener("click",saveSettings);
   $("testBtn").addEventListener("click",testConn);
   $("fetchModels").addEventListener("click",()=>fetchModelsFromUpstream());
+  // 本机浏览器：一键把它拉起来（首次人工登录一次）
+  $("openBrowserBtn")?.addEventListener("click", async () => {
+    const btn = $("openBrowserBtn"), out = $("browserStatus");
+    btn.disabled = true; out.className = "test-result"; out.textContent = "正在启动浏览器…";
+    const r = await window.api.computer.openBrowser(S.botId);
+    btn.disabled = false;
+    if (r.ok) {
+      out.className = "test-result ok";
+      out.textContent = `浏览器已启动${r.status?.external ? "（接管已有）" : ""}，端口 ${r.status?.port ?? "?"}`;
+      toast("浏览器已打开，第一次请在里面登录一次 TikTok");
+    } else {
+      out.className = "test-result err";
+      out.textContent = r.message || "启动失败";
+    }
+  });
   // 改完地址/密钥后自动拉一次（防抖），失焦时若参数变了也补拉
   let modelFetchTimer=null;
   const scheduleModelFetch=()=>{

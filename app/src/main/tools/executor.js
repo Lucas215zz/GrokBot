@@ -80,6 +80,29 @@ async function executeTool(call, ctx) {
       case "browser_navigate":
         return await computer.navigate(args.url);
 
+      case "browser_snapshot":
+        return await computer.browserSnapshot();
+
+      case "browser_click":
+        return await computer.browserClick(args.uid);
+
+      case "browser_type":
+        return await computer.browserType(args.uid, args.text, { submit: Boolean(args.submit) });
+
+      case "browser_eval":
+        return truncate(await computer.browserEval(args.expression));
+
+      case "browser_screenshot":
+        return `截图已保存：${await computer.browserScreenshot()}`;
+
+      case "report_result": {
+        // 只记录供调度器判定成功/失败，不回传副作用
+        const status = ["success", "blocked", "failed"].includes(args.status) ? args.status : "failed";
+        if (ctx.reportResult) ctx.reportResult({ status, summary: args.summary || "", details: args.details || "" });
+        const word = status === "success" ? "成功" : status === "blocked" ? "受阻" : "失败";
+        return `已上报结果：${word}。${args.summary || ""}`;
+      }
+
       case "list_bots":
         if (!ctx.listBots) return "当前不可用";
         return (

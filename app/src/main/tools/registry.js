@@ -54,12 +54,54 @@ const BUILTIN_TOOLS = [
   },
   {
     name: "browser_navigate",
-    description: "在 Bot 的计算机上打开一个网页（需要该计算机支持浏览器，云端可用）。",
+    description: "在 Bot 的浏览器里打开一个网页。本机会自启一个独立的 Chrome/Edge（登录态会保存）。",
     parameters: {
       type: "object",
       properties: { url: { type: "string", description: "要打开的网址" } },
       required: ["url"],
     },
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "读取当前网页的可交互元素清单（按钮/输入框/链接等，每个带 [gbN] 编号）。点按钮、填表前先用它看页面有什么。",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "browser_click",
+    description: "点击当前页面上 snapshot 里某个编号的元素。",
+    parameters: {
+      type: "object",
+      properties: { uid: { type: "string", description: "snapshot 给出的编号，如 gb3" } },
+      required: ["uid"],
+    },
+  },
+  {
+    name: "browser_type",
+    description: "往当前页面上某个输入框里填写文字（可选回车提交）。uid 来自 snapshot。",
+    parameters: {
+      type: "object",
+      properties: {
+        uid: { type: "string", description: "snapshot 给出的编号" },
+        text: { type: "string", description: "要填的内容" },
+        submit: { type: "boolean", description: "填完是否按回车提交，默认否" },
+      },
+      required: ["uid", "text"],
+    },
+  },
+  {
+    name: "browser_eval",
+    description: "在当前网页里执行一段 JavaScript 并返回结果（用于读取页面数据、调用页面接口）。",
+    parameters: {
+      type: "object",
+      properties: { expression: { type: "string", description: "要执行的 JS 表达式" } },
+      required: ["expression"],
+    },
+  },
+  {
+    name: "browser_screenshot",
+    description: "给当前网页截一张图，返回保存路径（复杂页面看不清时用）。",
+    parameters: { type: "object", properties: {} },
   },
   {
     name: "list_bots",
@@ -179,6 +221,25 @@ const BUILTIN_TOOLS = [
         maxResults: { type: "number", description: "最多返回多少条，默认 50" },
       },
       required: ["pattern"],
+    },
+  },
+  {
+    name: "report_result",
+    description:
+      "上报本次任务真实的执行结果。任务结束前（尤其是定时例程 / 无人值守运行时）必须调用一次。" +
+      "系统据此判断这一轮到底算成功还是失败 —— 只写文字总结而不调用本工具，会被视为「未上报结果」，不会被当作成功。",
+    parameters: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["success", "blocked", "failed"],
+          description: "success=目标全部达成；blocked=因缺少授权/登录/数据而无法完成；failed=执行出错",
+        },
+        summary: { type: "string", description: "一句话说明这轮做了什么、结果如何" },
+        details: { type: "string", description: "可选的补充细节（关键数字、失败原因、异常项）" },
+      },
+      required: ["status", "summary"],
     },
   },
 ];

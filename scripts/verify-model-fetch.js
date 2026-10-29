@@ -141,8 +141,18 @@ async function main() {
     await sleep(2200);
     ok("改回正确密钥后恢复", /已拉取 4 个模型/.test(await evaluate("document.getElementById('modelHint').textContent") || ""));
 
+    // 旧模型 ID（不在上游列表里）在点「从上游拉取」后应被纠正为有效模型，
+    // 并自动展开下拉 —— 否则用户会以为「没拉到」。
+    await evaluate(`document.getElementById('modelInput').value='gpt-4o-old-bogus'`);
+    await evaluate(`document.getElementById('fetchModels').click()`);
+    await sleep(1500);
+    const fixedModel = await evaluate("document.getElementById('modelInput').value");
+    ok("旧模型 ID 被纠正为有效模型", MODELS.includes(fixedModel), JSON.stringify(fixedModel));
+    const popOpen = await evaluate("document.getElementById('modelPop').hidden === false");
+    ok("手动拉取后下拉自动展开", popOpen === true);
+
     // 收尾：关闭设置面板，确认没有把临时值写进已保存配置
-    await evaluate("document.getElementById('settingsModal').hidden=true");
+    await evaluate("document.getElementById('modelPop').hidden=true; document.getElementById('settingsModal').hidden=true");
     const saved = await evaluate("window.api.settings.get()");
     ok("未保存就不污染已存配置", saved.provider.baseUrl !== `http://127.0.0.1:${MOCK_PORT}/v1`, saved.provider.baseUrl);
 

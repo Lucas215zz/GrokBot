@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("api", {
   computer: {
     info: (botId) => ipcRenderer.invoke("computer:info", botId),
     screenUrl: (botId) => ipcRenderer.invoke("computer:screen", botId),
+    openBrowser: (botId) => ipcRenderer.invoke("computer:browser-open", botId),
+    browserStatus: (botId) => ipcRenderer.invoke("computer:browser-status", botId),
   },
 
   approval: {

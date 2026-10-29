@@ -13,6 +13,13 @@ const { RemoteComputer } = require("./remote-computer");
 
 const instances = new Map();
 
+// 应用数据目录在 app.whenReady() 后才知道，这里由一个 setter 注入，
+// 供本机计算机存放浏览器 profile / 截图（不塞进每个调用点）。
+let userDataDir = "";
+function setUserDataDir(dir) {
+  userDataDir = dir || "";
+}
+
 /**
  * 取得某个 Bot 使用的计算机。
  * - local：每个 Bot 一个独立的根目录（互不干扰）
@@ -31,7 +38,15 @@ function getComputer(config, { botId, workspace }) {
 
   const key = `local:${workspace}`;
   if (!instances.has(key)) {
-    instances.set(key, new LocalComputer({ id: botId || "local", rootDir: workspace }));
+    instances.set(
+      key,
+      new LocalComputer({
+        id: botId || "local",
+        rootDir: workspace,
+        userDataDir,
+        browserConfig: config?.browser || {},
+      }),
+    );
   }
   return instances.get(key);
 }
@@ -41,4 +56,4 @@ function disposeAll() {
   instances.clear();
 }
 
-module.exports = { getComputer, disposeAll };
+module.exports = { getComputer, disposeAll, setUserDataDir };

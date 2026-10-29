@@ -29,8 +29,14 @@ const ok = (n, c, extra = "") => {
   if (!c) fail++;
 };
 
-/** 慢速 mock：先吐一段，再拖约 9 秒才结束，方便中途关窗口 */
+/**
+ * 慢速 mock，且遵守新的「必须上报结果」约定：
+ *   - 第 1 个 /responses 请求：模型调用 report_result(success)，第二轮才给最终文本
+ *   - 第 2 个 /responses 请求：先拖约 9 秒（方便中途关窗口），再吐最终文本
+ * 这样例程既能被判定为成功，又能验证「关窗口后仍在后台跑完」。
+ */
 function startMock() {
+  let turn = 0;
   const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
@@ -45,6 +51,22 @@ function startMock() {
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
+    turn++;
+    if (turn === 1) {
+      // 第一轮：调用 report_result
+      res.write(`data: ${JSON.stringify({
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          call_id: "call_report_1",
+          name: "report_result",
+          arguments: JSON.stringify({ status: "success", summary: "后台任务已完成" }),
+        },
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "response.completed", response: { model: "mock-model", usage: { input_tokens: 5, output_tokens: 5 } } })}\n\n`);
+      return res.end();
+    }
+    // 第二轮：慢速给最终文本
     res.write(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "开始处理…" })}\n\n`);
     await sleep(9000);
     res.write(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "后台任务已经完成。" })}\n\n`);

@@ -113,15 +113,30 @@ class RoutineScheduler {
     try {
       const result = await this.runRoutine(routine, signal);
       const aborted = Boolean(result?.aborted) || Boolean(signal?.aborted);
+      // 关键：以模型「上报的结果」为准，而不是「只要吐了字就算成功」。
+      // - success  → ok
+      // - blocked  → 未完成（缺少授权/登录/数据），标记 blocked
+      // - failed / 未上报 → 失败
+      const rep = result?.report || null;
+      const reportStatus = rep && ["success", "blocked", "failed"].includes(rep.status) ? rep.status : null;
+      const ok = !aborted && !result?.error && reportStatus === "success";
+      const blocked = !aborted && !result?.error && reportStatus === "blocked";
+      const unreported = !aborted && !result?.error && !reportStatus;
+      let summary;
+      if (aborted) summary = "已手动停止";
+      else if (result?.error) summary = String(result.error).slice(0, 300);
+      else if (reportStatus) summary = String(rep.summary || rep.details || "").slice(0, 300) || "（模型未给出摘要）";
+      else if (unreported) summary = "模型未上报执行结果（未调用 report_result），按失败处理：" + String(result?.text || "").slice(0, 240);
+      else summary = String(result?.text || result?.error || "（无输出）").slice(0, 300);
       entry = {
         at: startedAt,
-        ok: !result?.error && !aborted,
+        ok,
+        blocked,
+        reportStatus,
         stopped: aborted,
         trigger,
         durationMs: Date.now() - startedAt,
-        summary: aborted
-          ? "已手动停止"
-          : (result?.text || result?.error || "（无输出）").slice(0, 300),
+        summary,
         steps: result?.steps ?? null,
       };
     } catch (error) {
@@ -129,6 +144,8 @@ class RoutineScheduler {
       entry = {
         at: startedAt,
         ok: false,
+        blocked: false,
+        reportStatus: null,
         stopped: aborted,
         trigger,
         durationMs: Date.now() - startedAt,

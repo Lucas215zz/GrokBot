@@ -121,3 +121,33 @@ summary: "巡检已完成：我已在当前工作目录创建并追加 patrol.lo
 | 触发 | 任务匹配时由模型主动读 | 到点自动跑 |
 
 最佳组合：把重复的事固化成技能，再让例程按时调用它。
+
+---
+
+## 结果以 `report_result` 为准：杜绝「假成功」
+
+原来的判定是 `ok = 没报错 && 没被中止`，结果是模型只要吐了段文字（哪怕内容是
+「我没能完成，原因是…」）就会被记成**成功**。这个坑在小红书采集那条例程里一次踩了 8 次：
+8 条全是「无法完成」的文字汇报，日志里却全绿。
+
+现在的约定：
+
+| 情况 | 判定 |
+| --- | --- |
+| 模型调用 `report_result(status="success")` | `ok = true` |
+| 模型调用 `report_result(status="blocked")` | `ok = false`，但界面显示「受阻」（不是崩溃，是需要人介入） |
+| 模型调用 `report_result(status="failed")` | `ok = false` |
+| **跑完了却没调用 `report_result`** | `ok = false`，摘要写「模型未上报执行结果（未调用 report_result）」 |
+| 手动停止 | `stopped = true`，`ok = false`，摘要「已停止」 |
+
+- `report_result` 工具签名：`{ status: "success"|"blocked"|"failed", summary, details? }`
+- 只有**例程**（无人值守）会在系统提示里加「结束前必须调用 report_result」这段；
+  普通对话不受影响，模型不会被迫做这个。
+- `report_result` 属于**安全**操作，不会弹审批。
+- 所以写例程指令时，务必明确要求模型「最后用 report_result 上报」，
+  否则这条例程永远判失败。指令里也建议写清「成功了报什么、失败/受阻报什么」。
+
+实测：
+- `node scripts/verify-routine-report.js` —— success / blocked / failed / 未上报 / 停止 五种情形全绿；
+- `node scripts/verify-report-tool.js` —— 工具与循环透传；
+- 真实 app 端到端（采集例程）：`ok=true`、`reportStatus=success`、81 秒、5 步完成。

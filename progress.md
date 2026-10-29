@@ -265,6 +265,49 @@ computer/
 `node scripts/verify-routine-background.js` **9 项全过**（1.2s 内按钮变「停止」、关窗口后进程存活、
 任务继续跑完 9s 并落盘、可正常退出）。
 
+### 18. 本机浏览器（真实浏览器自动化）
+
+原来 `browser_navigate` 在本机直接报「这台计算机不支持浏览器」，网页上的点选/采集/注入只能靠
+用户手动开一个带 `--remote-debugging-port=9333` 的 Chrome。现在 Bot **自带浏览器**：
+
+- `computer/browser.js`：`findBrowserExe()`（Chrome→Edge，可用 `GROKBOT_CHROME` 指定）；
+  `LocalBrowser` 有两种模式——**自有模式**（`--user-data-dir=<userData>\browser-profile`
+  `--remote-debugging-port=0`，读 `DevToolsActivePort`，登录态持久）与**接管模式**
+  （`app.json` 里 `browser.attach` 直接连已有 CDP，不杀用户进程）。
+- 方法：`navigate / eval / snapshot / click / type / screenshot / info / status / dispose`。
+  `snapshot()` 给可见可交互元素打 `data-gb-uid="gbN"`，返回 `[gbN] <role> 名称 → href`。
+- 新工具：`browser_snapshot / browser_click / browser_type / browser_eval / browser_screenshot`
+  （`browser_navigate` 保留）；审批策略 click/type→network、eval→script、snapshot/screenshot→safe。
+- 设置面板新增「本机浏览器」区（`#openBrowserBtn` / `#browserStatus`），IPC
+  `computer:browser-open` / `computer:browser-status`，preload 同步 `computer.openBrowser/browserStatus`。
+- 采集脚本 `cdp.mjs` 自动发现端口：`GROKBOT_CDP_PORT` → `9333` → `browser-profile\DevToolsActivePort`。
+
+实测：`node scripts/verify-local-browser.js` **全绿**（启动/读端口/snapshot/type/click/eval/截图/dispose）；
+接管 9333 能读到真实 TikTok 页面；自有模式打开 example.com 正常。详见 `docs/browser.md`。
+
+### 19. 例程结果以 `report_result` 为准（杜绝假成功）
+
+原来 `ok = !error && !aborted` —— 模型只要吐了文字（哪怕内容是「我没能完成」）就记成功，
+8 次失败汇报全是 `ok=true`。现在改为以模型显式上报的结果为准：
+
+- 新工具 `report_result { status: success|blocked|failed, summary, details? }`，
+  执行器写入 `ctx.reportResult`；`loop.js` 只有**例程**（传了 `report`）才在系统提示加
+  「结束前必须调用 report_result」。
+- `scheduler.js`：`ok = reportStatus === "success"`；`blocked` 单独标记（界面显示「受阻」）；
+  **未上报 = 失败**，摘要写「模型未上报执行结果（未调用 report_result）」。
+- `report_result` 归为 `safe`，不弹审批。
+
+实测：`verify-routine-report.js`（5 情形）/ `verify-report-tool.js` 全绿；工具数 15 → **21**。
+
+### 20. 达人样品采集跑通（A）
+
+`tiktok-affiliate-sample-requests` 技能内新增参数化脚本 `scripts/collect_to_review.mjs` + `cdp.mjs`：
+自动连接本机浏览器、**遍历「经营市场」下拉里的所有国家**（泰国/马来西亚/菲律宾）逐国翻页，
+输出 `out/to_review.json`。关键结论：签名 URL 与市场无关（市场靠页面会话状态切换），可复用同一签名跨市场拉取。
+
+实测：真实 Chrome 上跑出 3 国 **13 条**（泰 5 / 马 1 / 菲 7）；例程 `rt-9ffa169b` 端到端
+`ok=true / reportStatus=success / 81s / 5 步`。**注意**：该接口无「申请时间」，只有剩余申请时间。
+
 ---
 
 ## 三、关键决策
@@ -313,17 +356,23 @@ computer/
 | 2026-10-29 | **Bot 置顶**：左栏图钉 / 设置里勾选，置顶的固定在最上方，多个置顶按最近置顶排 |
 | 2026-10-29 | **例程后台执行 + 系统托盘**：修掉「立即运行」按钮永远卡在「运行中…」（节点重建后操作旧 DOM）；runNow 改为后台启动立即返回、可点「停止」；关窗口收进托盘，例程继续跑，只有托盘退出才停 |
 | 2026-10-29 | **例程可编辑**：列表新增「编辑」按钮，把已有值回填进同一个编辑器（名称 / Bot / 指令 / 触发方式 / 时刻 / 危险操作），保存走 `routines:update`；改时间表重算 nextRunAt，历史记录保留 |
+| 2026-10-29 | **本机浏览器（真实浏览器自动化）**：Bot 自带独立 profile 的 Chrome（或接管 9333），新增 `browser_snapshot/click/type/eval/screenshot`，设置面板加「打开浏览器」；采集脚本可自动发现端口 |
+| 2026-10-29 | **例程结果以 report_result 为准**：修掉「模型只吐文字就算成功」的假成功（原来 8 次「没完成」全记 ok=true）；新增 `report_result` 工具，未上报=失败，受阻单独标记 |
+| 2026-10-29 | **模型拉取 UX 修正**：拉取成功后若框里是旧的无效模型 ID 自动纠正、并自动展开下拉；实测上游 25 个模型 |
+| 2026-10-29 | **达人样品采集跑通**：`collect_to_review.mjs` 参数化进技能，自动遍历经营市场（泰/马/菲）逐国翻页；实测 3 国 13 条，例程端到端 ok=true |
 
 ### 代码规模
 
 ```
-JS 模块              24 个 / 6007 行（app/src 下的 .js；另有 css 293 行 / html 394 行）
-  renderer/app.js   1644 行
-  main.js            756 行
+JS 模块              25 个 / 6673 行（app/src 下的 .js；另有 css 293 行 / html 403 行）
+  renderer/app.js   1723 行
+  main.js            782 行
+  computer/browser.js 341 行（本机浏览器 / CDP）
+  tools/registry.js  253 行（21 个工具）
   routines/scheduler.js 147 行（后台执行 / 停止 / 运行态）
   mentions.js        128 行（@ 技能解析）
-验证脚本             16 个 / 2331 行（scripts/，不含 `_*.js` 临时脚本）
-docs                 7 份 / 537 行
+验证脚本             16 个 / 2460 行（scripts/，不含 `_*.js` 临时脚本）
+docs                 8 份 / 617 行（新增 docs/browser.md）
 ```
 
 ### 数据目录结构
@@ -338,6 +387,8 @@ docs                 7 份 / 537 行
   routines.json      例程
   collab\            留言队列 + 群聊记录
   memory\            长期记忆（user.json + <botId>.json）
+  browser-profile\   本机浏览器独立 profile（登录态持久，自带模式用）
+  screenshots\       browser_screenshot 截图输出
 ```
 
 ---
@@ -350,7 +401,18 @@ docs                 7 份 / 537 行
 | --- | --- | --- |
 | ~~1~~ | ~~长期记忆~~ | ✅ 已完成（2026-10-28） |
 | ~~1~~ | ~~审批边界~~ | ✅ 已完成（2026-10-28）：四档风险 + 弹窗 + 三级记忆 + 审计 + 例程无人值守 |
+| ~~3~~ | ~~本机浏览器~~ | ✅ 已完成（2026-10-29）：自带独立 profile Chrome + 接管模式，snapshot/click/type/eval/screenshot |
+| ~~4~~ | ~~例程假成功~~ | ✅ 已完成（2026-10-29）：以 `report_result` 为准，未上报=失败 |
 | 2 | **云端服务端** | 写一个 Docker 版实现 `docs/cloud-computer.md` 的契约，实现 24h 无人值守 |
+| 3 | **达人采集写飞书（待确认）** | 采集已跑通；写飞书需用户给出 Base/Table/View（见下方「待用户拍板」） |
+
+### ⚠️ 待用户拍板（阻塞，不能猜）
+
+1. **飞书表**：`botare-creator-sample-sheet` 技能里已写明目标表（正式表 `botare.feishu.cn/wiki/YYlYwGxdIi0QjskHRvfcpFFKnOL`，
+   测试表 `pcnglaajd3ye.feishu.cn/wiki/TVA0wKWtUiWhxNksRMlc1XaCnid`）与页签（TH/MY/PH/ID），
+   但该技能有**误删整表 / 误点 Approve** 的事故史，写飞书属高风险。需用户确认：用哪张表、哪个页签、是否本轮就写入。
+2. **「申请时间」口径**：TikTok 接口无申请时间，只有剩余申请时间。`botare-creator-sample-sheet`
+   技能的口径是「申请时间 = 到期时间 − 5 天」。需用户确认用哪种。
 
 ### 中优先级
 
@@ -394,6 +456,7 @@ docs                 7 份 / 537 行
 | `app/src/main/agent/mentions.js` | `@技能名` 解析（纯函数） |
 | `app/src/main/computer/computer.js` | 计算机接口契约 |
 | `app/src/main/computer/remote-computer.js` | **云端实现（HTTP 契约）** |
+| `app/src/main/computer/browser.js` | **本机浏览器（CDP，自有/接管两模式）** |
 | `app/src/main/tools/registry.js` | 工具定义 |
 | `app/src/main/tools/executor.js` | 工具执行 |
 | `app/src/main/skills/skill-store.js` | 技能读写 + 导入 |
@@ -413,7 +476,9 @@ docs                 7 份 / 537 行
 | `scripts/verify-background-run.js` | 后台运行端到端（17 项，需真实模型） |
 | `scripts/verify-skill-mention.js` | `@技能` 直接调用自检（31 项） |
 | `scripts/verify-bot-pin.js` | Bot 置顶自检（10 项） |
-| `docs/skills.md` / `mcp.md` / `collab.md` / `routines.md` / `memory.md` / `approval.md` | 各模块文档 |
+| `scripts/verify-local-browser.js` | 本机浏览器自检（启动/快照/点击/输入/截图/关进程） |
+| `scripts/verify-routine-report.js` / `verify-report-tool.js` | 例程结果上报语义（success/blocked/failed/未上报/停止） |
+| `docs/skills.md` / `mcp.md` / `collab.md` / `routines.md` / `memory.md` / `approval.md` / `browser.md` | 各模块文档 |
 
 ---
 
@@ -498,3 +563,14 @@ npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前�
     完全相同的排序规则（置顶优先 → 最近置顶 → 最近更新）。改排序时两处必须一起改，
     否则「刷新后顺序跳变」。改这块跑 `node scripts/verify-bot-pin.js`（10 项）。
 
+
+20. **例程的成功与否只看 `report_result`**：`scheduler.js` 里 `ok = reportStatus === "success"`，
+    未上报即失败。写例程指令时必须要求模型「最后调用 report_result」，否则永远判失败。
+    改这块跑 `node scripts/verify-routine-report.js`（5 情形）。
+21. **本机浏览器别自己再起 Chrome**：Agent 用 `browser_*` 工具时走 `computer/browser.js`，
+    自有模式会自己起独立 profile 的 Chrome、退出时 `dispose` 关掉；不要把「让用户手动开 9333」
+    再写回 SKILL 或代码里（旧的过时说明已删）。采集脚本用 `cdp.mjs` 的端口自动发现即可。
+    改这块跑 `node scripts/verify-local-browser.js`。
+22. **`build-app.js` 已改成「就地覆盖 asar」**：targetDir 已存在时只 `copyFileSync` 覆盖
+    `resources/app.asar`，不再整体 rm/cp。某些机器上 asar 被残留进程占着 delete 句柄，
+    整体删除会把 dist 删一半。改打包逻辑时保留这个分支。

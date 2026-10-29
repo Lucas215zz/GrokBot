@@ -348,8 +348,43 @@ function classifyTool(tool, args = {}) {
     };
   }
 
+  if (tool === "browser_click" || tool === "browser_type") {
+    return {
+      category: "network",
+      blocked: false,
+      label: LABEL.network,
+      reason: tool === "browser_click" ? "会在网页上点击，可能提交表单或触发外部操作" : "会往网页里输入内容并可能提交",
+      severity: SEVERITY.network,
+      detail: tool === "browser_click" ? `元素：${String(args.uid ?? "")}` : `元素：${String(args.uid ?? "")}\n内容：${clip(args.text, 500)}`,
+      ruleId: "browser:" + tool + ":" + String(args.uid ?? ""),
+    };
+  }
+
+  if (tool === "browser_eval") {
+    return {
+      category: "script",
+      blocked: false,
+      label: LABEL.script,
+      reason: "会在网页里执行任意 JavaScript，静态检查无法确认其行为",
+      severity: SEVERITY.script,
+      detail: clip(args.expression, 1000),
+      ruleId: "browser:eval",
+    };
+  }
+
+  if (tool === "browser_snapshot" || tool === "browser_screenshot") {
+    return { category: "safe", blocked: false, label: LABEL.safe, ruleId: null };
+  }
+
   // 纯本地、只读、不触达外部世界的工具：确凿安全
-  if (tool === "list_bots" || tool === "list_skills" || tool === "use_skill" || tool === "recall") {
+  // report_result 只是把结果记给调度器，不产生任何副作用，也不需要审批
+  if (
+    tool === "list_bots" ||
+    tool === "list_skills" ||
+    tool === "use_skill" ||
+    tool === "recall" ||
+    tool === "report_result"
+  ) {
     return { category: "safe", blocked: false, label: LABEL.safe, ruleId: null };
   }
 
