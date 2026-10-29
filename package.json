@@ -16,6 +16,7 @@
     "verify:window": "node scripts/verify-window-bounds.js",
     "verify:skills": "node scripts/verify-skill-frontmatter.js",
     "verify:paths": "node scripts/verify-path-sandbox.js",
+    "verify:loop": "node scripts/verify-agent-loop.js",
     "verify:mentions": "node scripts/verify-skill-mention.js",
     "verify:mentions:e2e": "node scripts/verify-mention-live.js",
     "verify:pins": "node scripts/verify-bot-pin.js",
@@ -24,6 +25,6 @@
     "verify:report": "node scripts/verify-report-tool.js",
     "verify:browser": "node scripts/verify-local-browser.js",
     "verify:routines:e2e": "node scripts/verify-routine-background.js",
-    "verify:all": "node scripts/verify-approval.js && node scripts/verify-approval-live.js && node scripts/verify-cloud.js && node scripts/verify-skill-frontmatter.js && node scripts/verify-path-sandbox.js && node scripts/verify-skill-mention.js && node scripts/verify-bot-pin.js && node scripts/verify-routine-scheduler.js && node scripts/verify-routine-report.js && node scripts/verify-report-tool.js && node scripts/verify-local-browser.js && node scripts/verify-model-fetch.js && node scripts/verify-window-bounds.js && node scripts/smoke-ui.js && node scripts/verify-background-run.js && node scripts/verify-routine-background.js"
+    "verify:all": "node scripts/verify-approval.js && node scripts/verify-agent-loop.js && node scripts/verify-approval-live.js && node scripts/verify-cloud.js && node scripts/verify-skill-frontmatter.js && node scripts/verify-path-sandbox.js && node scripts/verify-skill-mention.js && node scripts/verify-bot-pin.js && node scripts/verify-routine-scheduler.js && node scripts/verify-routine-report.js && node scripts/verify-report-tool.js && node scripts/verify-local-browser.js && node scripts/verify-model-fetch.js && node scripts/verify-window-bounds.js && node scripts/smoke-ui.js && node scripts/verify-background-run.js && node scripts/verify-routine-background.js"
   }
 }

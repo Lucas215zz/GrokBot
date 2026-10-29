@@ -119,12 +119,15 @@ class RoutineScheduler {
       // - failed / 未上报 → 失败
       const rep = result?.report || null;
       const reportStatus = rep && ["success", "blocked", "failed"].includes(rep.status) ? rep.status : null;
-      const ok = !aborted && !result?.error && reportStatus === "success";
+      const hitLimit = Boolean(result?.maxStepsReached);
+      const ok = !aborted && !result?.error && !hitLimit && reportStatus === "success";
       const blocked = !aborted && !result?.error && reportStatus === "blocked";
       const unreported = !aborted && !result?.error && !reportStatus;
       let summary;
       if (aborted) summary = "已手动停止";
       else if (result?.error) summary = String(result.error).slice(0, 300);
+      else if (hitLimit && !reportStatus)
+        summary = `未完成：已达步数上限（${result.steps} 步，含 ${result.continuations || 0} 次自动续跑），且模型未上报结果`;
       else if (reportStatus) summary = String(rep.summary || rep.details || "").slice(0, 300) || "（模型未给出摘要）";
       else if (unreported) summary = "模型未上报执行结果（未调用 report_result），按失败处理：" + String(result?.text || "").slice(0, 240);
       else summary = String(result?.text || result?.error || "（无输出）").slice(0, 300);

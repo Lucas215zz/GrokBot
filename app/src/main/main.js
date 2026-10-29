@@ -537,6 +537,13 @@ function registerIpc() {
 
       // 收尾：去掉临时快照，写入真正的最终回复
       session.messages = session.messages.filter((m) => m !== liveSnap);
+      // 达到步数上限仍未结束：明确写「未完成」，不要把半截进度旁白当成结果
+      if (result.maxStepsReached) {
+        finalText =
+          (finalText ? finalText.trimEnd() + "\n\n" : "") +
+          `> ⚠️ 未完成：已用完 ${result.steps} 步（含 ${result.continuations || 0} 次自动续跑）仍未结束。` +
+          `任务可能卡在最后一步，请回复「继续」或指出卡点。`;
+      }
       if (finalText) session.messages.push({ role: "assistant", content: finalText, at: Date.now() });
       // 被停止又还没来得及产出内容：写一条明确的「已停止」，别让界面只剩用户那句
       else if (result.aborted) session.messages.push({ role: "assistant", content: "（已停止）", at: Date.now() });
@@ -544,11 +551,12 @@ function registerIpc() {
       store.saveSession(session);
 
       return {
-        ok: !result.error,
-        message: result.error,
+        ok: !result.error && !result.maxStepsReached,
+        message: result.error || (result.maxStepsReached ? "已达步数上限，任务未完成" : ""),
         text: finalText,
         steps: result.steps,
         aborted: Boolean(result.aborted),
+        maxStepsReached: Boolean(result.maxStepsReached),
         session: { id: session.id, title: session.title },
       };
     } catch (error) {

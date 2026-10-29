@@ -122,6 +122,8 @@ code,.mono{font-family:var(--mono);font-size:.92em}
 @keyframes blink{0%,60%,100%{opacity:.28}30%{opacity:1}}
 .errbox{border:1px solid color-mix(in srgb,var(--err) 45%,var(--border));background:color-mix(in srgb,var(--err) 9%,transparent);border-radius:10px;padding:10px 12px;font-size:13px}
 .errbox b{color:var(--err);display:block;margin-bottom:2px}
+.notebox{border:1px solid var(--border);background:var(--elev);color:var(--dim);border-radius:10px;padding:8px 12px;font-size:12.5px}
+.notebox.warn{border-color:color-mix(in srgb,var(--warn, #d18b00) 45%,var(--border));background:color-mix(in srgb,var(--warn, #d18b00) 10%,transparent);color:var(--text)}
 
 /* empty */
 .empty{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:24px;text-align:center}

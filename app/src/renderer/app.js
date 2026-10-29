@@ -218,6 +218,7 @@ function buildLiveSection(run) {
   wrap.appendChild(node);
   for (const it of run.items) {
     if (it.kind==="error") { wrap.appendChild(errNode(it.message)); continue; }
+    if (it.kind==="note") { wrap.appendChild(noteNode(it.text, it.level)); continue; }
     const n=toolNode(it.name, it.args, it.output||null, it.state);
     if (it.kind==="tool" && it.callId) run.toolEls.set(it.callId, n);
     wrap.appendChild(n);
@@ -285,6 +286,15 @@ function errNode(message) {
   const w=document.createElement("div"); w.className="tool";
   const b=document.createElement("div"); b.className="errbox";
   b.innerHTML=`<b>执行失败</b>${esc(message||"")}`;
+  w.appendChild(b);
+  return w;
+}
+
+/** 运行中的状态提示（自动续跑 / 达到步数上限），不是错误，只是让用户知道发生了什么 */
+function noteNode(text, level) {
+  const w=document.createElement("div"); w.className="tool";
+  const b=document.createElement("div"); b.className="notebox" + (level==="warn"?" warn":"");
+  b.textContent=text||"";
   w.appendChild(b);
   return w;
 }
@@ -552,6 +562,12 @@ function startRun({ botId, sessionId, text }) {
       const names = (ev.skills||[]).map((s)=>"@"+s.name).join("  ");
       pushItem({ kind:"skill", name:"已加载技能", args:names, output:"本次将严格按该技能步骤执行", state:"ok" },
         (it) => toolNode(it.name, it.args, it.output, "ok"));
+    } else if (ev.type==="continuing") {
+      const text = `已自动继续（第 ${ev.batch}/${ev.maxContinuations} 次，累计 ${ev.steps} 步）——上一批步数用尽但任务还没做完`;
+      pushItem({ kind:"note", text, level:"info" }, (it) => noteNode(it.text, it.level));
+    } else if (ev.type==="max_steps") {
+      const text = `⚠️ 已达步数上限（${ev.steps} 步），任务仍未完成`;
+      pushItem({ kind:"note", text, level:"warn" }, (it) => noteNode(it.text, it.level));
     }
     if (isVisible()) scrollIfVisible();
   });
@@ -586,6 +602,10 @@ function finishRun(run, r) {
   run.liveWrap = null; run.assistantNode = null; run.assistantEl = null; run.toolEls.clear();
   if (r?.ok) {
     // 最终回复（含「已停止」占位）由主进程写进会话，afterRunRefresh 会重新读盘展示
+    S.lastRunError?.delete(key);
+    S.connected = true;
+  } else if (r?.maxStepsReached) {
+    // 未完成：主进程已把「⚠️ 未完成」写进会话正文，这里不再叠一个「出错」气泡
     S.lastRunError?.delete(key);
     S.connected = true;
   } else {

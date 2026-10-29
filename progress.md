@@ -356,6 +356,32 @@ PowerShell `Get-ChildItem` / `Get-Content` 才成功（那个会话里后面一�
 
 实测：`verify-path-sandbox.js`（11 项）全绿；`verify-skill-frontmatter.js` 47 项全绿（新增「read() 带文件清单」）。
 
+### 23. Agent 循环：步数用尽自动续跑，不再静默停
+
+**问题**（用户原话「每次都是流程没做完就停下来了，我需要的是结果」）：达人运营会话 4 轮，
+每轮都精确撞上 `DEFAULT_MAX_STEPS = 25`（实测每轮估算 step 数 = 25/25/25/25），
+但界面**没有任何提示**，且 `main.js` 里 `ok: !result.error` —— 达到步数上限**没有 error**，
+被判成功，把「我继续…我再等它加载」这种进度旁白当成最终回复落盘。
+
+**根因**：`loop.js` 的 `for (step <= maxSteps)` 用尽后只 `emit({type:"max_steps"})` 就返回，
+而渲染层 `renderer/app.js` **完全没有 `max_steps` 分支** → 用户看不到任何提示；主进程也没把
+`maxStepsReached` 当失败。
+
+**修复**（三处）：
+
+- `loop.js`：新增 `DEFAULT_MAX_CONTINUATIONS = 2`。改成双层循环——一批 25 步用尽且**最后一步仍在
+  调用工具**（说明没收敛）→ `emit({type:"continuing"})` 后自动再续跑一批；续跑批次也用尽 →
+  `emit({type:"max_steps"})` + 返回 `maxStepsReached:true, continuations`。`totalSteps` 全局累计。
+  系统提示新增「结束本轮的硬性要求」：**禁止**用「我继续/稍等/正在加载」这类进度旁白收尾。
+- `main.js`：`result.maxStepsReached` 时给 `finalText` 追加 `> ⚠️ 未完成：已用完 N 步（含 M 次自动续跑）…`；
+  `ok: !error && !maxStepsReached`，返回体加 `maxStepsReached`。
+- `renderer/app.js`：新增 `noteNode()` + `buildLiveSection` 支持 `kind:"note"`；
+  事件处理新增 `continuing`（info 提示）/ `max_steps`（warn 提示）；`finishRun` 新增
+  `maxStepsReached` 分支（不叠「出错」气泡，主进程已把「⚠️ 未完成」写进正文）。
+- `scheduler.js`：`hitLimit = result.maxStepsReached` → `ok=false`，摘要「未完成：已达步数上限…」。
+
+实测：`node scripts/verify-agent-loop.js` **14 项全绿**（正常结束 / 续跑后完成 / 续跑用尽=未完成 / 中止）。
+
 ---
 
 ## 三、关键决策
@@ -410,21 +436,23 @@ PowerShell `Get-ChildItem` / `Get-Content` 才成功（那个会话里后面一�
 | 2026-10-29 | **达人样品采集跑通**：`collect_to_review.mjs` 参数化进技能，自动遍历经营市场（泰/马/菲）逐国翻页；实测 3 国 13 条，例程端到端 ok=true |
 | 2026-10-29 | **工具轨迹默认折叠**：执行中的工具卡正文默认收起，点卡片头才展开，出错自动展开；长命令/代码不再顶长对话 |
 | 2026-10-29 | **文件工具可读技能目录**：修掉 `list_files`/`read_file` 读技能目录被拒（读写分离白名单）；`use_skill` 直接给出技能全部文件绝对路径，不再需要 run_command 绕路 |
+| 2026-10-29 | **Agent 循环不再静默停**：步数用尽且仍在干活 → 自动续跑（默认 2 批）；真跑满仍没结束 → 明确标记「⚠️ 未完成」并判失败（不再把「我继续…」当结果）；界面新增「已自动继续 / 已达上限」提示 |
 
 ### 代码规模
 
 ```
-JS 模块              25 个 / 6928 行（app/src 下的 .js；另有 css 298 行 / html 403 行）
-  renderer/app.js   1736 行
-  main.js            782 行
-  computer/browser.js 420 行（本机浏览器 / CDP / 多标签）
-  tools/registry.js  277 行（23 个工具）
-  computer/local-computer.js 317 行（读写分离路径沙箱 / 图片识别 / %VAR% 展开）
-  skills/skill-store.js 350 行（read 附带文件清单）
-  routines/scheduler.js 164 行（后台执行 / 停止 / 运行态 / 结果上报）
-  mentions.js        128 行（@ 技能解析）
-验证脚本             20 个 / 2848 行（scripts/，不含 `_*.js` 临时脚本；新增 verify-path-sandbox.js）
-docs                 8 份 / 662 行（skills.md 补「技能目录读写策略」）
+JS 模块              25 个 / 7675 行（app/src 下的 .js；另有 css 320 行 / html 420 行）
+  renderer/app.js   1886 行
+  main.js            846 行
+  computer/browser.js 453 行（本机浏览器 / CDP / 多标签）
+  tools/registry.js  281 行（23 个工具）
+  computer/local-computer.js 349 行（读写分离路径沙箱 / 图片识别 / %VAR% 展开）
+  skills/skill-store.js 382 行（read 附带文件清单）
+  routines/scheduler.js 187 行（后台执行 / 停止 / 运行态 / 结果上报 / 步数上限判失败）
+  agent/loop.js      217 行（双层循环：自动续跑 + 结束契约）
+  mentions.js        127 行（@ 技能解析）
+验证脚本             18 个 / 3029 行（scripts/ 下 verify-*.js + smoke-ui.js，不含 `_*.js` 临时脚本；新增 verify-agent-loop.js）
+docs                 8 份 / 941 行（新增 memory.md / approval.md / browser.md 等）
 ```
 
 ### 数据目录结构
@@ -631,5 +659,10 @@ npm run verify:all      # 审批 125 + 审批端到端 13 + 云端契约 + 技�
     对**读**放行这两个目录，对**写**仍只限 workspace。改路径策略时不要一刀切地放开，
     也不要让模型再绕 `run_command Get-Content` 读技能——`use_skill` 已直接给出文件绝对路径。
     改这块跑 `node scripts/verify-path-sandbox.js`（9 项）。
+24. **`maxStepsReached` 必须当成「失败/未完成」处理，不能只看 `result.error`**：
+    Agent 步数用尽本身不是 error，早先因此被 `ok: !result.error` 判成成功，
+    把「我继续…」当结果落盘。现在 `loop.js` 用尽会续跑 2 批，仍用尽则 `maxStepsReached=true`；
+    `main.js` 追加「⚠️ 未完成」并 `ok=false`，`scheduler.js` 同步判失败。
+    新增任何「运行结果判定」入口时都要带上这个标志。改这块跑 `node scripts/verify-agent-loop.js`（14 项）。
 
 
