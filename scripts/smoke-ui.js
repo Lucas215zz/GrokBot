@@ -132,6 +132,42 @@ async function main() {
     ok("Bot 内有 5 档策略", await evaluate("document.querySelectorAll('#botApprovalMode option').length === 5"));
     ok("例程有允许危险操作开关", await evaluate("!!document.getElementById('rtAllowRisky')"));
 
+    // 工具执行轨迹默认折叠，点开才看输出（用户明确要求）
+    const toolFold = await evaluate(`(() => {
+      const host = document.getElementById('messages');
+      const before = host.children.length;
+      const ok = toolNode('run_command', '{"command":"echo hi"}', '退出码 0\\nhi', 'ok');
+      const err = toolNode('run_command', '{"command":"boom"}', '错误：命令失败', 'err');
+      const run = toolNode('run_command', '{"command":"sleep"}', null, 'running');
+      host.append(ok, err, run);
+      const okBody = ok.querySelector('.tool-body');
+      const errBody = err.querySelector('.tool-body');
+      const runBody = run.querySelector('.tool-body');
+      const res = {
+        okFolded: !!okBody && okBody.hidden === true,
+        errAutoOpen: !!errBody && errBody.hidden === false,
+        runningNoBody: runBody === null,
+        hasCaret: !!ok.querySelector('.tool-caret') && ok.querySelector('.tool-caret').hidden === false,
+        appended: host.children.length - before,
+      };
+      // 点卡片头展开
+      ok.querySelector('.tool-head').click();
+      res.expandedAfterClick = okBody.hidden === false;
+      res.caretAfter = ok.querySelector('.tool-caret').textContent;
+      ok.querySelector('.tool-head').click();
+      res.collapsedAgain = okBody.hidden === true;
+      // 清理
+      host.removeChild(ok); host.removeChild(err); host.removeChild(run);
+      return JSON.stringify(res);
+    })()`);
+    const tf = JSON.parse(toolFold);
+    ok("工具输出默认折叠", tf.okFolded === true, toolFold);
+    ok("出错自动展开", tf.errAutoOpen === true);
+    ok("运行中没有空输出体", tf.runningNoBody === true);
+    ok("折叠卡有展开箭头", tf.hasCaret === true);
+    ok("点卡片头可展开", tf.expandedAfterClick === true && tf.caretAfter === "▾");
+    ok("再点一次可收起", tf.collapsedAgain === true);
+
     // ---- 例程：必须是后台执行（不能有「运行中…」卡死的老毛病） ----
     ok("例程接口暴露 stop/running", await evaluate(
       "typeof window.api.routines.stop === 'function' && typeof window.api.routines.running === 'function'"

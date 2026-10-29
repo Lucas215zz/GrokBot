@@ -250,18 +250,35 @@ function toolNode(name, args, output, state) {
   const wrap=document.createElement("div"); wrap.className="tool"; wrap.dataset.state=state||"running";
   const box=document.createElement("div"); box.className="tool-box";
   const head=document.createElement("div"); head.className="tool-head";
+  const caret=document.createElement("span"); caret.className="tool-caret"; caret.hidden=!output; caret.textContent=output?"▸":"";
   const ico=document.createElement("span"); ico.className="tool-ico"; ico.textContent = state==="ok"?"✓":state==="err"?"✕":"◐";
   const nm=document.createElement("span"); nm.className="tool-name"; nm.textContent=name;
   const arg=document.createElement("span"); arg.className="tool-arg"; arg.textContent=summarizeArgs(args);
-  head.append(ico,nm,arg);
+  head.append(caret,ico,nm,arg);
   box.appendChild(head);
-  if (output) {
-    const body=document.createElement("div"); body.className="tool-body"; body.textContent=output;
-    box.appendChild(body);
-  }
-  head.addEventListener("click",()=>{ const b=box.querySelector(".tool-body"); if(b) b.hidden=!b.hidden; });
   wrap.appendChild(box);
+  // 执行输出默认折叠：卡片头只留「工具名 + 一行参数」，需要时点开看完整输出/代码。
+  // 出错时自动展开，避免失败被折叠淹没。
+  if (output) ensureToolBody(wrap, output, state||"running");
+  head.addEventListener("click",()=>{
+    const b=box.querySelector(".tool-body"); if(!b) return;
+    b.hidden=!b.hidden;
+    caret.textContent = b.hidden ? "▸" : "▾";
+  });
   return wrap;
+}
+
+/** 给工具卡补/更新折叠体，并同步折叠箭头与「出错自动展开」 */
+function ensureToolBody(n, output, state) {
+  const box=n.querySelector(".tool-box"); if(!box) return;
+  const caret=n.querySelector(".tool-caret");
+  let body=box.querySelector(".tool-body");
+  const autoOpen = state==="err";
+  if(!body){ body=document.createElement("div"); body.className="tool-body"; box.appendChild(body); }
+  body.textContent=output||"";
+  body.hidden=!autoOpen;
+  if(caret){ caret.hidden=false; caret.textContent = body.hidden ? "▸" : "▾"; }
+  n.dataset.state=state||n.dataset.state;
 }
 
 function errNode(message) {
@@ -513,11 +530,8 @@ function startRun({ botId, sessionId, text }) {
       if (n) {
         n.dataset.state = it?.state || "ok";
         n.querySelector(".tool-ico").textContent = n.dataset.state==="err" ? "✕" : "✓";
-        if (!n.querySelector(".tool-body")) {
-          const body=document.createElement("div");
-          body.className="tool-body"; body.textContent=ev.output;
-          n.querySelector(".tool-box").appendChild(body);
-        }
+        // 结果回来时把输出放进折叠体（默认收起，出错自动展开）
+        ensureToolBody(n, ev.output, n.dataset.state);
         scrollIfVisible();
       }
     } else if (ev.type==="delegate") {
