@@ -7,21 +7,23 @@
 const BUILTIN_TOOLS = [
   {
     name: "list_files",
-    description: "列出某个目录下的文件和子目录。用于了解工作区结构。",
+    description:
+      "列出某个目录下的文件和子目录。默认是 Bot 的工作目录；也可以传绝对路径（技能目录、应用数据目录也允许读）。看技能里有哪些文件请优先用 use_skill，它会直接给出清单。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对工作目录的路径，默认为根目录" },
+        path: { type: "string", description: "相对工作目录的路径，或技能/应用数据目录下的绝对路径；默认为工作目录" },
       },
     },
   },
   {
     name: "read_file",
-    description: "读取文本文件内容。大文件会被截断。",
+    description:
+      "读取文本文件内容（大文件会被截断）。可读工作目录内的文件，也可读技能目录、应用数据目录（截图等）下的绝对路径。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对工作目录的文件路径" },
+        path: { type: "string", description: "相对工作目录的文件路径，或技能/应用数据目录下的绝对路径" },
         startLine: { type: "number", description: "起始行号（1 开始），可选" },
         endLine: { type: "number", description: "结束行号，可选" },
       },
@@ -30,7 +32,7 @@ const BUILTIN_TOOLS = [
   },
   {
     name: "write_file",
-    description: "创建或覆盖写入文本文件。会显示在界面上供用户确认。",
+    description: "创建或覆盖写入文本文件（仅限 Bot 工作目录内）。会显示在界面上供用户确认。",
     parameters: {
       type: "object",
       properties: {
@@ -42,7 +44,10 @@ const BUILTIN_TOOLS = [
   },
   {
     name: "run_command",
-    description: "在 Bot 的工作目录中执行一条 shell 命令并返回输出。适合运行脚本、构建、测试。",
+    description:
+      "在 Bot 的工作目录（cwd）中执行一条 PowerShell 命令并返回输出。适合运行脚本、构建、测试。" +
+      "要跑技能里的脚本，直接用 use_skill 给出的绝对路径（cd 到脚本目录再执行），不要用 list_files 猜路径。" +
+      "命令里的 %APPDATA% 这类 Windows 变量会被自动展开。",
     parameters: {
       type: "object",
       properties: {
@@ -91,7 +96,9 @@ const BUILTIN_TOOLS = [
   },
   {
     name: "browser_eval",
-    description: "在当前网页里执行一段 JavaScript 并返回结果（用于读取页面数据、调用页面接口）。",
+    description:
+      "在当前网页里执行一段 JavaScript 并返回结果（用于读取页面数据、调用页面接口）。" +
+      "若页面有 CSP 限制，fetch 可能报「Failed to fetch」，此时改用 browser_snapshot 读页面结构，或直接 browser_navigate 打开目标接口地址。",
     parameters: {
       type: "object",
       properties: { expression: { type: "string", description: "要执行的 JS 表达式" } },
@@ -112,7 +119,8 @@ const BUILTIN_TOOLS = [
   {
     name: "browser_tab",
     description:
-      "切换到指定标签页（按标题或网址里的关键字，例如 tiktok），之后的 snapshot/click/type 都作用在这个标签上。传空字符串回到默认标签。",
+      "切换到指定标签页（按标题或网址里的关键字，例如 tiktok），之后的 snapshot/click/type 都作用在这个标签上。传空字符串回到默认标签。" +
+      "不确定有哪些标签时，先调用 browser_tabs 看真实标题/网址，不要凭空猜标签名。",
     parameters: {
       type: "object",
       properties: { hint: { type: "string", description: "标签页标题或网址里的关键字，如 tiktok / 飞书" } },

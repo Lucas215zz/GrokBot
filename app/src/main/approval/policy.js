@@ -55,7 +55,7 @@ const SYSTEM_RE =
 
 /** 凭据、密钥、应用自身数据 */
 const SECRET_RE =
-  /\.ssh\b|\.aws\b|\.gnupg\b|\.kube\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.netrc\b|credentials(?:\.json)?\b|secrets?\.(?:json|ya?ml)\b|(?<![\w$])\.env(?:\.(?:local|production|development|test))?\b|appdata[\\/]roaming[\\/]grok bot\b|grok bot[\\/]app\.json\b/i;
+  /\.ssh\b|\.aws\b|\.gnupg\b|\.kube\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.netrc\b|credentials(?:\.json)?\b|secrets?\.(?:json|ya?ml)\b|(?<![\w$])\.env(?:\.(?:local|production|development|test))?\b|grok bot[\\/](?:app\.json|mcp\.json|browser-profile)\b/i;
 
 /**
  * 「看不透」的命令：内联脚本、编码命令、管道喂给解释器、动态构造。

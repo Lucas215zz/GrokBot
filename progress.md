@@ -152,7 +152,7 @@ computer/
 - `browser_navigate` → `network`；`remember` 写 `profile` 层 → `memory` 档（只在 `strict` 下问，`balanced` 不问，避免日常偏好频繁打扰）
 
 实测：
-- 离线自检 **120 项全过**（分类矩阵 / 策略矩阵 / 状态机 / 防绕过 / 审计落盘）
+- 离线自检 **125 项全过**（分类矩阵 / 策略矩阵 / 状态机 / 防绕过 / 审计落盘）
 - 端到端 **13 项全过**：拒绝后文件仍在、模型收到「已阻止」；允许后文件真被删；
   只读任务零打扰；例程无人值守自动拒绝
 - 界面冒烟 **55 项全过**（真实 Electron + CDP，含窗口重载后恢复待审批、设置里模型下拉、后台运行）
@@ -326,6 +326,36 @@ computer/
 实测：真实 Chrome 上跑出 3 国 **13 条**（泰 5 / 马 1 / 菲 7）；例程 `rt-9ffa169b` 端到端
 `ok=true / reportStatus=success / 81s / 5 步`。**注意**：该接口无「申请时间」，只有剩余申请时间。
 
+### 22. 文件工具可读技能目录（路径沙箱读写分离）
+
+**问题**：达人运营会话里 `list_files C:\Users\phlus\AppData\Roaming\Grok Bot\skills\tiktok-affiliate-sample-requests`
+报「拒绝访问工作目录之外的路径」。技能明明是 GrokBot 自己的，却被拒。
+
+**根因**：`LocalComputer.resolve()` 把一切路径限制在 Bot 的 workspace（`E:\DATABASE\Grokbot`），
+而技能装在 `<userData>\skills`、截图在 `<userData>\screenshots` —— 都不在 workspace，
+所以 `list_files` / `read_file` 读技能一律被拒；模型只能绕道 `run_command` 跑
+PowerShell `Get-ChildItem` / `Get-Content` 才成功（那个会话里后面一串 run_command 全是绕路）。
+
+**修复（读/写分离）**：
+
+- `LocalComputer` 新增 `readRoots`（自动含 `<userData>\skills`、`<userData>\screenshots`，可再传 `extraReadRoots`）；
+  `resolve(relPath, { write })`：读操作额外允许白名单，写操作仍只限 workspace；
+  越界错误里**列出所有允许目录**并提示「技能用 use_skill / 脚本用 run_command 绝对路径，不要 list_files 猜路径」。
+- `SkillStore.read()` 新增 `files`（技能内文件相对清单）；`use_skill` 直接输出技能目录 +
+  每个文件的绝对路径，模型照单读取即可，不再需要 `list_files`。
+- `registry`：`list_files` / `read_file` / `write_file` 描述同步新语义。
+
+**顺带修掉同一批会话里暴露的其它坑**（都是「模型撞墙后反复重试」的根源）：
+
+- **图片误读**：`read_file` 读 `.png` 会返回乱码，模型还反复读。现在识别到图片/二进制直接返回
+  「这是图片/二进制文件，read_file 只能读文本」，并提示改用 `browser_snapshot` / `browser_eval`。
+- **`%APPDATA%` 不展开**：模型常写 `dir "%APPDATA%\..."`，PowerShell 不认 `%VAR%`，路径变成
+  `E:\DATABASE\Grokbot\%APPDATA%\...` 找不到。`exec()` 现在统一把命令里的 `%VAR%` 展开成真实值。
+- **工具描述纠偏**：`run_command` 说明「要跑技能脚本用 use_skill 给的绝对路径」；
+  `browser_tab` 说明「不确定标签先 browser_tabs，别猜」；`browser_eval` 说明「CSP 报 Failed to fetch 时改用 snapshot」。
+
+实测：`verify-path-sandbox.js`（11 项）全绿；`verify-skill-frontmatter.js` 47 项全绿（新增「read() 带文件清单」）。
+
 ---
 
 ## 三、关键决策
@@ -337,7 +367,7 @@ computer/
 | **模型接本地路由器 8788** | 复用已有的 `codex-model-router`，多模型可选 |
 | **技能用渐进式加载** | 全塞进上下文会撑爆；清单+按需读正文 |
 | **工具执行全在本地** | 模型只做决策，安全可控 |
-| **路径沙箱** | 所有文件操作经 `safeResolve`，越界直接拒绝 |
+| **路径沙箱（读写分离）** | 写只限 workspace；读额外允许技能/截图目录，越界直接拒绝并列出允许目录 |
 | **PowerShell 强制 UTF-8** | 否则中文在管道里变 GBK 乱码（踩过坑） |
 | **抽出 buildAgentContext** | 交互/委派/群聊/例程四个入口复用同一份上下文 |
 | **例程先推进再执行** | 防长任务导致重复触发 |
@@ -379,19 +409,22 @@ computer/
 | 2026-10-29 | **模型拉取 UX 修正**：拉取成功后若框里是旧的无效模型 ID 自动纠正、并自动展开下拉；实测上游 25 个模型 |
 | 2026-10-29 | **达人样品采集跑通**：`collect_to_review.mjs` 参数化进技能，自动遍历经营市场（泰/马/菲）逐国翻页；实测 3 国 13 条，例程端到端 ok=true |
 | 2026-10-29 | **工具轨迹默认折叠**：执行中的工具卡正文默认收起，点卡片头才展开，出错自动展开；长命令/代码不再顶长对话 |
+| 2026-10-29 | **文件工具可读技能目录**：修掉 `list_files`/`read_file` 读技能目录被拒（读写分离白名单）；`use_skill` 直接给出技能全部文件绝对路径，不再需要 run_command 绕路 |
 
 ### 代码规模
 
 ```
-JS 模块              25 个 / 6804 行（app/src 下的 .js；另有 css 298 行 / html 403 行）
+JS 模块              25 个 / 6928 行（app/src 下的 .js；另有 css 298 行 / html 403 行）
   renderer/app.js   1736 行
   main.js            782 行
   computer/browser.js 420 行（本机浏览器 / CDP / 多标签）
-  tools/registry.js  269 行（23 个工具）
+  tools/registry.js  277 行（23 个工具）
+  computer/local-computer.js 317 行（读写分离路径沙箱 / 图片识别 / %VAR% 展开）
+  skills/skill-store.js 350 行（read 附带文件清单）
   routines/scheduler.js 164 行（后台执行 / 停止 / 运行态 / 结果上报）
   mentions.js        128 行（@ 技能解析）
-验证脚本             19 个 / 2755 行（scripts/，不含 `_*.js` 临时脚本）
-docs                 8 份 / 617 行（新增 docs/browser.md）
+验证脚本             20 个 / 2848 行（scripts/，不含 `_*.js` 临时脚本；新增 verify-path-sandbox.js）
+docs                 8 份 / 662 行（skills.md 补「技能目录读写策略」）
 ```
 
 ### 数据目录结构
@@ -490,7 +523,7 @@ docs                 8 份 / 617 行（新增 docs/browser.md）
 | `app/src/main/approval/policy.js` | 风险分类 + 永久拒绝名单 |
 | `app/src/main/approval/approval-manager.js` | 审批网关（弹窗 / 三级记忆 / 超时） |
 | `app/src/main/approval/audit.js` | 审批审计（JSONL） |
-| `scripts/verify-approval.js` | 审批自检（120 项） |
+| `scripts/verify-approval.js` | 审批自检（125 项） |
 | `scripts/verify-approval-live.js` | 审批端到端（13 项） |
 | `scripts/verify-background-run.js` | 后台运行端到端（17 项，需真实模型） |
 | `scripts/verify-skill-mention.js` | `@技能` 直接调用自检（31 项） |
@@ -532,10 +565,10 @@ npm run verify:cloud   # 等价于 node scripts/verify-cloud.js
 ### 跑全部验证
 
 ```powershell
-npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前端解析 46 + @技能 31 + Bot 置顶 10 + 例程调度 15 + 模型拉取 8 + 窗口边界 + 界面冒烟 + 后台运行 17 + 例程后台端到端 9
+npm run verify:all      # 审批 125 + 审批端到端 13 + 云端契约 + 技能解析 47 + 路径沙箱 11 + @技能 31 + Bot 置顶 10 + 例程调度 15 + 模型拉取 8 + 窗口边界 + 界面冒烟 + 后台运行 17 + 例程后台端到端 9
 ```
 
-单独跑：`npm run verify:approval` / `verify:approval:e2e` / `verify:mentions` / `verify:skills` / `verify:models` / `verify:ui` / `verify:background` / `verify:routines` / `verify:routines:e2e`
+单独跑：`npm run verify:approval` / `verify:approval:e2e` / `verify:mentions` / `verify:skills` / `verify:paths` / `verify:models` / `verify:ui` / `verify:background` / `verify:routines` / `verify:routines:e2e`
 （`verify:mentions` 是解析器 31 项；`verify:mentions:e2e` 是真实模型的实机 6 项，需要先关掉正在运行的 Grok Bot）
 另有 `verify:pins`（Bot 置顶 10 项，纯数据层，不用起界面）。
 
@@ -593,5 +626,10 @@ npm run verify:all      # 审批 120 + 审批端到端 13 + 云端契约 + 前�
 22. **`build-app.js` 已改成「就地覆盖 asar」**：targetDir 已存在时只 `copyFileSync` 覆盖
     `resources/app.asar`，不再整体 rm/cp。某些机器上 asar 被残留进程占着 delete 句柄，
     整体删除会把 dist 删一半。改打包逻辑时保留这个分支。
+23. **技能目录不在 workspace 内，读走白名单、写仍只在 workspace**：技能装在
+    `<userData>\skills`、截图在 `<userData>\screenshots`，所以 `LocalComputer.resolve()`
+    对**读**放行这两个目录，对**写**仍只限 workspace。改路径策略时不要一刀切地放开，
+    也不要让模型再绕 `run_command Get-Content` 读技能——`use_skill` 已直接给出文件绝对路径。
+    改这块跑 `node scripts/verify-path-sandbox.js`（9 项）。
 
 

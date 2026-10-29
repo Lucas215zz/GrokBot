@@ -171,10 +171,20 @@ async function executeTool(call, ctx) {
         if (!ctx.readSkill) return "错误：技能系统未启用";
         const skill = ctx.readSkill(args.name);
         if (!skill) return `找不到技能「${args.name}」。可先调用 list_skills 查看。`;
-        const scriptHint = skill.hasScripts
-          ? `\n\n（该技能带辅助脚本，位于：${skill.dir}/scripts）`
+        const files = Array.isArray(skill.files) ? skill.files : [];
+        const fileHint = files.length
+          ? [
+              "",
+              "## 该技能的文件（绝对路径可直接用 read_file / run_command）",
+              `技能目录：${skill.dir}`,
+              ...files.slice(0, 60).map((f) => `- ${skill.dir}\\${f.replace(/\//g, "\\")}`),
+              files.length > 60 ? `…（共 ${files.length} 个文件）` : "",
+              "",
+              "提示：这些文件在应用数据目录里，不属于 Bot 工作区；直接按上面的绝对路径读取/执行即可，",
+              "不要用 list_files 去猜路径。",
+            ].filter(Boolean).join("\n")
           : "";
-        return `# 技能：${skill.name}\n\n${skill.body}${scriptHint}`;
+        return `# 技能：${skill.name}\n\n${skill.body}${fileHint}`;
       }
 
       default:

@@ -304,6 +304,15 @@ async function main() {
     check("搜 .ssh → secret", classifyTool("search_text", { pattern: "x", path: ".ssh" }).category, "secret");
     check("写 .env → secret", classifyTool("write_file", { path: ".env", content: "A=1" }).category, "secret");
 
+    // 技能/截图是 Bot 自己该读的（新加只读白名单后不能误判成 secret，否则会一直弹窗）
+    const appData = "C:\\Users\\u\\AppData\\Roaming\\Grok Bot\\";
+    check("读技能目录 → safe", classifyTool("read_file", { path: appData + "skills\\x\\SKILL.md" }).category, "safe");
+    check("列技能目录 → safe", classifyTool("list_files", { path: appData + "skills\\x" }).category, "safe");
+    check("读截图 → safe", classifyTool("read_file", { path: appData + "screenshots\\a.png" }).category, "safe");
+    // 但应用自身配置/凭据仍要问
+    check("读 app.json → secret", classifyTool("read_file", { path: appData + "app.json" }).category, "secret");
+    check("读 mcp.json → secret", classifyTool("read_file", { path: appData + "mcp.json" }).category, "secret");
+
     // 浏览器出站要走网络档
     check("browser_navigate → network", classifyTool("browser_navigate", { url: "https://x.dev" }).category, "network");
 

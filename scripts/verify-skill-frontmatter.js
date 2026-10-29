@@ -124,6 +124,12 @@ console.log("\n[8] 保存往返（save -> read）保留嵌套 metadata 与多行
   const listed = store.list().find((s) => s.id === "rt");
   ok("list() 描述压成单行", listed && !listed.description.includes("\n") && listed.description.length > 10, JSON.stringify(listed && listed.description));
 
+  // read() 应带上技能内文件清单（供 use_skill 直接告知模型，避免用 list_files 猜路径）
+  fs.mkdirSync(path.join(tmp, "skills", "rt", "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "skills", "rt", "scripts", "run.mjs"), "console.log(1)\n");
+  const withFiles = store.read("rt");
+  ok("read() 带文件清单", Array.isArray(withFiles.files) && withFiles.files.includes("SKILL.md") && withFiles.files.includes("scripts/run.mjs"), JSON.stringify(withFiles.files));
+
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 

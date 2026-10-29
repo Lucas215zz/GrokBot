@@ -239,13 +239,18 @@ class SkillStore {
     const raw = fs.readFileSync(file, "utf8");
     const { meta, body } = parseFrontmatter(raw);
     const metaObj = meta && typeof meta === "object" ? meta : {};
+    const skillDir = path.join(this.dir, id);
+    // 列出技能内的文件（相对技能目录），供 use_skill 直接告诉模型有哪些脚本/参考文档，
+    // 省得模型再用 list_files 去猜路径（那会撞到路径沙箱）。
+    const files = listSkillFiles(skillDir);
     return {
       id,
       name: typeof metaObj.name === "string" && metaObj.name ? metaObj.name : id,
       description: typeof metaObj.description === "string" ? metaObj.description : collapseYamlText(metaObj.description),
       body,
-      dir: path.join(this.dir, id),
+      dir: skillDir,
       hasScripts: fs.existsSync(path.join(this.dir, id, "scripts")),
+      files,
       meta: metaObj, // 保留原始嵌套元数据（metadata 等），供界面查看
     };
   }
@@ -346,6 +351,32 @@ class SkillStore {
 
 function sanitizeId(name) {
   return String(name).replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "") || "skill";
+}
+
+/**
+ * 递归列出技能目录内的文件（相对路径，最多 200 个），跳过隐藏目录。
+ * 只用于「告诉模型技能里有什么」，不做任何写操作。
+ */
+function listSkillFiles(skillDir) {
+  const out = [];
+  const walk = (dir, prefix) => {
+    if (out.length >= 200) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (out.length >= 200) return;
+      if (e.name.startsWith(".") || e.name === "node_modules") continue;
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(dir, e.name), rel);
+      else out.push(rel);
+    }
+  };
+  walk(skillDir, "");
+  return out.sort();
 }
 
 module.exports = { SkillStore, parseFrontmatter };
