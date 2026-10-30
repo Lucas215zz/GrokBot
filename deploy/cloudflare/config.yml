@@ -1,0 +1,15 @@
+# Cloudflare Tunnel 配置模板
+#
+# 由 deploy/macos/tunnel-setup.sh 自动生成到 ~/.cloudflared/config.yml，
+# 把 __TUNNEL_ID__ / __CREDENTIALS__ / __HOSTNAME__ 换成真实值。
+#
+# 只暴露本机的 grok-server（127.0.0.1:8787），其余一律 404。
+tunnel: __TUNNEL_ID__
+credentials-file: __CREDENTIALS__
+ingress:
+  - hostname: __HOSTNAME__
+    service: http://127.0.0.1:8787
+    originRequest:
+      connectTimeout: 30s
+      httpHostHeader: __HOSTNAME__
+  - service: http_status:404

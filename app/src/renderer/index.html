@@ -162,7 +162,7 @@
           <option value="local">本机（当前）</option>
           <option value="remote">云计算机</option>
         </select>
-        <span class="field-hint">云计算机需先自建服务端，实现 /health、/fs/*、/exec 等接口。</span>
+        <span class="field-hint">云计算机需先自建服务端（见 docs/macos-cloud.md）。把家里的 Mac 当云电脑：先跑 deploy/macos/setup.sh，再用 deploy/macos/tunnel-setup.sh 配 Cloudflare Tunnel，然后这里填 https://你的域名 + token。不需要公网 IP / 端口映射 / DDNS。</span>
       </div>
       <div id="remoteFields" hidden>
         <label class="field"><span class="field-label">云计算机地址</span><input id="computerBaseUrl" placeholder="https://vm.example.com" /></label>

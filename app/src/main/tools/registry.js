@@ -45,9 +45,11 @@ const BUILTIN_TOOLS = [
   {
     name: "run_command",
     description:
-      "在 Bot 的工作目录（cwd）中执行一条 PowerShell 命令并返回输出。适合运行脚本、构建、测试。" +
+      (process.platform === "win32"
+        ? "在 Bot 的工作目录（cwd）中执行一条 PowerShell 命令并返回输出。适合运行脚本、构建、测试。"
+        : "在 Bot 的工作目录（cwd）中执行一条 shell 命令（/bin/bash -lc）并返回输出。适合运行脚本、构建、测试。") +
       "要跑技能里的脚本，直接用 use_skill 给出的绝对路径（cd 到脚本目录再执行），不要用 list_files 猜路径。" +
-      "命令里的 %APPDATA% 这类 Windows 变量会被自动展开。",
+      (process.platform === "win32" ? "命令里的 %APPDATA% 这类 Windows 变量会被自动展开。" : ""),
     parameters: {
       type: "object",
       properties: {

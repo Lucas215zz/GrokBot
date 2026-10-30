@@ -39,6 +39,14 @@ const HARD_DENY = [
     label: "删除用户目录根",
   },
   { re: /\brm\b[^\n]*--no-preserve-root\b/i, label: "绕过保护删除系统根目录" },
+
+  // ---------- macOS ----------
+  { re: /\bdiskutil\b[^\n]*\b(?:eraseDisk|eraseVolume|reformat|zeroDisk|secureErase)\b/i, label: "抹掉磁盘" },
+  { re: /\bcsrutil\b[^\n]*\b(?:disable|clear)\b/i, label: "关闭系统完整性保护" },
+  { re: /\b(?:spctl|nvram)\b[^\n]*\b(?:--master-disable|disable)\b/i, label: "关闭系统安全策略" },
+  { re: /\brm\b[^\n]*\s(?:\/|\/System|\/Users|\/Applications|\/Library)(?:\s|$)/i, label: "删除系统目录" },
+  { re: /\b(?:chmod|chown)\b[^\n]*-R[^\n]*\s\/(?:\s|$)/i, label: "递归改系统根目录权限" },
+  { re: /\bkillall\b[^\n]*\b(?:WindowServer|launchd|kernel_task|loginwindow)\b/i, label: "杀死系统关键进程" },
 ];
 
 /** 删除 / 移动 / 重命名：可能造成数据丢失 */
@@ -51,11 +59,11 @@ const NETWORK_RE =
 
 /** 修改系统设置、动服务/进程、提权 */
 const SYSTEM_RE =
-  /\b(?:set-executionpolicy|schtasks|taskkill|stop-process|runas|sudo|shutdown|restart-computer|stop-computer|logoff|set-service|new-service|remove-service|net\s+user|net\s+localgroup)\b|\bsc(?:\.exe)?\s+(?:delete|config|stop|start)\b|\breg(?:\.exe)?\s+(?:add|set)\b|start-process\b[^\n]*-verb\s+runas|\bset-mppreference\b[^\n]*-(?:disablerealtimemonitoring|disableioavprotection|disablebehaviormonitoring|disablescriptscanning|disablescanningnetworkfiles|disableblockatfirstseen)\b|\bnetsh\b[^\n]*\badvfirewall\b[^\n]*\bstate\s+off\b|\bwevtutil\b[^\n]*\bcl\b|\bbcdedit\b|\bvssadmin\b/i;
+  /\b(?:set-executionpolicy|schtasks|taskkill|stop-process|runas|sudo|shutdown|restart-computer|stop-computer|logoff|set-service|new-service|remove-service|net\s+user|net\s+localgroup)\b|\bsc(?:\.exe)?\s+(?:delete|config|stop|start)\b|\breg(?:\.exe)?\s+(?:add|set)\b|start-process\b[^\n]*-verb\s+runas|\bset-mppreference\b[^\n]*-(?:disablerealtimemonitoring|disableioavprotection|disablebehaviormonitoring|disablescriptscanning|disablescanningnetworkfiles|disableblockatfirstseen)\b|\bnetsh\b[^\n]*\badvfirewall\b[^\n]*\bstate\s+off\b|\bwevtutil\b[^\n]*\bcl\b|\bbcdedit\b|\bvssadmin\b|\b(?:launchctl|diskutil|csrutil|spctl|systemsetup|scutil|pmset|softwareupdate|kextload|kextunload|defaults\s+write)\b|\bnetworksetup\b|\bdscl\b[^\n]*\b-(?:create|delete|passwd)\b|\bsudoers\b/i;
 
 /** 凭据、密钥、应用自身数据 */
 const SECRET_RE =
-  /\.ssh\b|\.aws\b|\.gnupg\b|\.kube\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.netrc\b|credentials(?:\.json)?\b|secrets?\.(?:json|ya?ml)\b|(?<![\w$])\.env(?:\.(?:local|production|development|test))?\b|grok bot[\\/](?:app\.json|mcp\.json|browser-profile)\b/i;
+  /\.ssh\b|\.aws\b|\.gnupg\b|\.kube\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.netrc\b|credentials(?:\.json)?\b|secrets?\.(?:json|ya?ml)\b|(?<![\w$])\.env(?:\.(?:local|production|development|test))?\b|grok bot[\\/](?:app\.json|mcp\.json|browser-profile)\b|\bkeychain\b|Login Data\b|\bCookies\b|\bauth\.json\b|\.config[\\/]gh[\\/]hosts\.yml/i;
 
 /**
  * 「看不透」的命令：内联脚本、编码命令、管道喂给解释器、动态构造。

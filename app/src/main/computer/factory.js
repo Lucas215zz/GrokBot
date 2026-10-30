@@ -29,9 +29,19 @@ function getComputer(config, { botId, workspace }) {
   const cfg = config?.computer || { kind: "local" };
 
   if (cfg.kind === "remote") {
-    const key = `remote:${cfg.baseUrl}`;
+    // 按 baseUrl + botId 缓存：服务端用 botId 隔离工作目录，
+    // 若只按 baseUrl 缓存，所有 Bot 会共用一个 RemoteComputer 实例、一个 botId，
+    // 文件就全挤在同一目录里了。
+    const key = `remote:${cfg.baseUrl}:${botId || "default"}`;
     if (!instances.has(key)) {
-      instances.set(key, new RemoteComputer({ baseUrl: cfg.baseUrl, token: cfg.token }));
+      instances.set(
+        key,
+        new RemoteComputer({
+          baseUrl: cfg.baseUrl,
+          token: cfg.token,
+          botId: botId || "default",
+        }),
+      );
     }
     return instances.get(key);
   }

@@ -382,6 +382,39 @@ PowerShell `Get-ChildItem` / `Get-Content` 才成功（那个会话里后面一�
 
 实测：`node scripts/verify-agent-loop.js` **14 项全绿**（正常结束 / 续跑后完成 / 续跑用尽=未完成 / 中止）。
 
+### 24. macOS 云电脑（Cloudflare Tunnel）
+
+**目标**（用户原话「我要用家里的电脑当云电脑」）：把家里的 Mac 变成 Grok Bot 的常驻执行环境。
+用户已确认走 **Cloudflare Tunnel** 方案（明确不需要公网 IP / 端口映射 / DDNS）。
+
+**关键结论**：`cloudflared` 从 Mac 主动向外连 Cloudflare，所以运营商封 80/443、IP 动态变化
+都无所谓；用户原先纠结的「IP 变了要更新域名」在 Tunnel 模式下不存在。
+
+**新增文件**：
+
+- `server/grok-server.js`（~700 行）：完整实现 `docs/cloud-computer.md` 契约。默认只听
+  `127.0.0.1:8787`、Bearer token（`timingSafeEqual`）、每 IP 限流、按 botId 隔离
+  `workspaces/<botId>/`、`realpathSync` 路径沙箱、`/exec` 超时+输出截断+危险命令黑名单、
+  浏览器全套端点、`/takeover` `/screen` `/health`。CLI：`--init` / `--print-token`。
+- `deploy/macos/com.grokbot.server.plist`：LaunchAgent（**必须 LaunchAgent 不是 LaunchDaemon**，
+  浏览器要 GUI 会话），`KeepAlive` + 补 `/opt/homebrew/bin` PATH。
+- `deploy/macos/setup.sh`：一键装服务端（`--uninstall` / `--status`）。
+- `deploy/cloudflare/config.yml` + `deploy/macos/tunnel-setup.sh`：一键配 Tunnel
+  （装 cloudflared、login、create、route dns、生成 config、装 `com.grokbot.tunnel` LaunchAgent）。
+- `deploy/macos/keep-awake.sh`：关睡眠 / 合盖不休眠 / 自动登录提醒。
+- `docs/macos-cloud.md`：架构图、部署步骤、Zero Trust Access、故障排查、三个约束。
+- `scripts/verify-mac-server.js`：24 项端到端自检。
+
+**跨平台改动**：`computer/browser.js` 支持 macOS 浏览器路径；`approval/policy.js` 加 macOS
+危险命令规则；`computer/remote-computer.js` 补齐浏览器方法 + botId；`computer/factory.js`
+按 `baseUrl:botId` 缓存。
+
+**三个必须讲清的约束**：① 例程调度仍在 Electron 主进程（Tunnel 不解决 App 退出后继续跑，
+Mac 上 App 要常开、收托盘即可）；② `/exec` 本质是 RCE，建议套 Zero Trust Access；
+③ Mac 必须保持已登录 GUI 会话（自动登录 + 禁睡眠 + Chrome 已装）。
+
+自检：`node scripts/verify-mac-server.js` **24 通过 / 0 失败**；`verify-approval` 125 项未破坏。
+
 ---
 
 ## 三、关键决策

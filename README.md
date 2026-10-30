@@ -185,6 +185,20 @@ Grok Bot 的核心抽象是「计算机」：一个账号共享一台持久计�
 node scripts/verify-cloud.js
 ```
 
+### 用家里的 Mac 当云电脑
+
+想把自己的 Mac 变成常驻的云计算机？用 **Cloudflare Tunnel** 就行——
+**不需要公网 IP、不需要端口映射、不需要 DDNS**（IP 变了也不用管）。
+
+```bash
+bash deploy/macos/setup.sh                     # 装本机服务端（LaunchAgent 常驻）
+bash deploy/macos/tunnel-setup.sh grok.example.com   # 配 Tunnel 暴露到公网
+bash deploy/macos/keep-awake.sh                # 禁止睡眠、合盖不休眠
+```
+
+然后在 App 里「设置 → 执行环境 → 云计算机」填 `https://grok.example.com` + token。
+完整步骤、架构图、故障排查见 [docs/macos-cloud.md](docs/macos-cloud.md)。
+
 ## 架构
 
 ```

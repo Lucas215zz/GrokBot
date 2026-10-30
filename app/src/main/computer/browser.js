@@ -21,17 +21,51 @@ const { spawn } = require("node:child_process");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 找一个可用的 Chromium 系浏览器可执行文件 */
+/**
+ * 找一个可用的 Chromium 系浏览器可执行文件。
+ *
+ * 三平台路径不一样：
+ * - macOS：.app 包里的 Contents/MacOS/<可执行文件>（不是 .app 目录本身）
+ * - Windows：Program Files 下的 chrome.exe / msedge.exe
+ * - Linux：包管理器装的 /usr/bin/...
+ *
+ * GROKBOT_CHROME 永远优先，用来指定非标准安装位置。
+ */
 function findBrowserExe() {
-  const cands = [
-    process.env.GROKBOT_CHROME,
-    path.join(process.env.ProgramFiles || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
-    path.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe"),
-    path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
-  ].filter(Boolean);
-  for (const c of cands) {
+  const env = process.env;
+  const home = env.HOME || env.USERPROFILE || "";
+  const cands = [env.GROKBOT_CHROME];
+
+  if (process.platform === "darwin") {
+    cands.push(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Arc.app/Contents/MacOS/Arc",
+      home && path.join(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+    );
+  } else if (process.platform === "win32") {
+    cands.push(
+      path.join(env.ProgramFiles || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe"),
+      path.join(env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
+    );
+  } else {
+    cands.push(
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/microsoft-edge",
+      "/snap/bin/chromium",
+    );
+  }
+
+  for (const c of cands.filter(Boolean)) {
     try {
       if (fs.existsSync(c)) return c;
     } catch { /* ignore */ }
