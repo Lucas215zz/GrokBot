@@ -96,13 +96,19 @@ ok "tunnel id: $TUNNEL_ID"
 ok "凭据: $CREDENTIALS"
 
 say "绑定域名：$HOSTNAME → $TUNNEL_NAME"
-if ! "$CF" tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | tee /tmp/grokbot-dns.log; then
-  if grep -qi "already exists\|record with that host already exists" /tmp/grokbot-dns.log; then
-    ok "DNS 记录已存在，跳过"
-  else
-    err "绑定 DNS 失败，请手动执行：$CF tunnel route dns $TUNNEL_NAME $HOSTNAME"
-    exit 1
-  fi
+DNS_LOG="/tmp/grokbot-dns.log"
+if "$CF" tunnel route dns "$TUNNEL_NAME" "$HOSTNAME" 2>&1 | tee "$DNS_LOG"; then
+  ok "DNS 已绑定"
+elif grep -qi "already exists" "$DNS_LOG"; then
+  # 很常见：DNSPod 解析里已经有一条同名记录（例如之前手建的 A 记录）。
+  # 这种情况 cloudflared 会报错，需要人工处理，不能当成成功。
+  err "DNS 记录已存在，但可能指向旧地址（比如之前手建的 A 记录）。"
+  err "请到 Cloudflare 面板 → DNS 删除 $HOSTNAME 的旧记录后重跑本脚本；"
+  err "或手动执行：$CF tunnel route dns $TUNNEL_NAME $HOSTNAME"
+  exit 1
+else
+  err "绑定 DNS 失败，请手动执行：$CF tunnel route dns $TUNNEL_NAME $HOSTNAME"
+  exit 1
 fi
 
 say "生成 $CF_DIR/config.yml"
