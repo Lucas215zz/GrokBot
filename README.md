@@ -24,6 +24,32 @@
 实测案例：让 Bot 写周报，它先 `list_bots` 发现「文档官」，再
 `delegate_to_bot` 委派，拿回结果后转述——3 步完成。
 
+## 手机端（Expo / React Native）
+
+桌面版之外的手机端移植，代码在 [`mobile/`](mobile/)，用 **Expo / React Native**
+编写，核心 Agent 引擎（模型流式调用、Agent 循环、工具执行、审批边界、技能、
+长期记忆、Bot 协作、云计算机）全部跑在手机上，直接连 Responses API 兼容服务。
+
+```bash
+cd mobile
+npm install
+npx expo start        # 用 Expo Go 扫码在真机运行，或按 a 跑 Android 模拟器
+```
+
+也可以在仓库根目录用：
+
+```bash
+npm run mobile              # 启动 Metro
+npm run mobile:android      # 直接跑 Android 模拟器
+```
+
+手机端限制：本机模式只有文档目录沙箱（文件读写 / 全文搜索，无 shell / 浏览器），
+切「云计算机」才有完整能力；MCP 仅 http；存储用 AsyncStorage；无后台常驻例程。
+详见 [`mobile/README.md`](mobile/README.md)。
+
+> 真机访问电脑上的模型路由器时，`127.0.0.1` 指手机自己，要改成电脑局域网 IP，
+> 且模型服务需监听 `0.0.0.0`。
+
 ## 启动
 
 **不想自己构建**：到 [Releases](https://github.com/Lucas215zz/GrokBot/releases) 下载
@@ -36,6 +62,8 @@ dist\app\Grok Bot.exe
 ```
 
 首次使用：右上角「选择模型」→ 选一个 → 点左栏 `+` 新建 Bot → 直接发任务。
+
+手机端从源码运行见上方「手机端（Expo / React Native）」小节。
 
 ## 前提
 
@@ -199,6 +227,10 @@ bash deploy/macos/keep-awake.sh                # 禁止睡眠、合盖不休眠
 然后在 App 里「设置 → 执行环境 → 云计算机」填 `https://grok.example.com` + token。
 完整步骤、架构图、故障排查见 [docs/macos-cloud.md](docs/macos-cloud.md)。
 
+> 想一步一步照着做（含 Cloudflare 面板手动配置 + 零信任 Access 怎么加）？
+> 看 [docs/cloud-pc-setup-guide.md](docs/cloud-pc-setup-guide.md)，从「Mac 配好」
+> 到「Cloudflare 配好」到「App 连上」全流程手把手。
+
 ## 架构
 
 ```
@@ -241,6 +273,10 @@ app/                  应用源码（打包成 app.asar）
   src/main/           主进程 + Agent 引擎 + 工具
   src/preload/        IPC 桥
   src/renderer/       界面
+mobile/               手机端（Expo / React Native）
+  src/core/           Agent 引擎（模型/循环/工具/审批/计算机）
+  src/store/          持久化（AsyncStorage）
+  src/ui/             界面（Bot 列表 / 对话 / 设置）
 scripts/build-app.js  打包 / 安装
 dist/app/             成品（可直接运行）
 ```

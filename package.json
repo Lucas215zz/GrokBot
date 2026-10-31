@@ -4,6 +4,9 @@
   "private": true,
   "description": "多 Bot Agent 桌面平台（支持技能 / MCP / 协作 / 定时任务）",
   "scripts": {
+    "mobile": "cd mobile && npx expo start",
+    "mobile:android": "cd mobile && npx expo start --android",
+    "mobile:ios": "cd mobile && npx expo start --ios",
     "build": "node scripts/build-app.js",
     "build:install": "node scripts/build-app.js --install",
     "clean": "node scripts/clean.js",
